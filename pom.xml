@@ -33,6 +33,7 @@
         <lombok.version>1.18.48</lombok.version>
         <spring-modulith.version>2.1.1</spring-modulith.version>
         <archunit.version>1.5.1</archunit.version>
+        <springdoc.version>3.1.1</springdoc.version>
     </properties>
 
     <dependencyManagement>
@@ -48,6 +49,11 @@
                 <version>${spring-modulith.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
             <!-- Spring Modulith 2.1.1 brings ArchUnit 1.4.2; Java 27 class files need 1.5.x -->
             <dependency>

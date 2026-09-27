@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import world.wholestory.api.analytics.application.AggregateStats;
 import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.StatsQueries;
 
@@ -25,10 +24,10 @@ class StatsController {
     private final StatsQueries stats;
 
     @GetMapping("/aggregate")
-    AggregateStats aggregate(@PathVariable UUID siteId,
+    AggregateStatsResponse aggregate(@PathVariable UUID siteId,
                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return stats.aggregate(siteId, new DateRange(from, to));
+        return StatsResponseMapper.toResponse(stats.aggregate(siteId, new DateRange(from, to)));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

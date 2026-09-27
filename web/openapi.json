@@ -1,0 +1,79 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "title" : "Whole Story API",
+    "description" : "Internal API consumed by the web application (BFF). Not exposed to the internet.",
+    "version" : "v1"
+  },
+  "servers" : [ {
+    "url" : "http://localhost",
+    "description" : "Generated server url"
+  } ],
+  "paths" : {
+    "/api/sites/{siteId}/stats/aggregate" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "aggregate",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "from",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "to",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AggregateStatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "AggregateStatsResponse" : {
+        "type" : "object",
+        "properties" : {
+          "visitors" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "visits" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pageviews" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "pageviews", "visitors", "visits" ]
+      }
+    }
+  }
+}
