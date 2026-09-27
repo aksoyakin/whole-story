@@ -42,3 +42,6 @@ next-env.d.ts
 
 # generated from openapi.json
 /src/lib/api/schema.d.ts
+
+# built from tracker/ during the image build
+/public/js/

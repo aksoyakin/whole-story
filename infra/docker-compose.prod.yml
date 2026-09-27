@@ -1,0 +1,152 @@
+# Production stack, deployed by Dokploy (Docker Compose from this repository).
+# Images are built and pushed to GHCR by CI. Only web and ingest are routed by Traefik;
+# api, PostgreSQL, Kafka and Redis are reachable on the internal network only (D-048).
+#
+# Required environment (Dokploy → Environment):
+#   IMAGE_PREFIX            e.g. ghcr.io/<owner>/whole-story
+#   IMAGE_TAG               e.g. latest or a commit sha
+#   POSTGRES_PASSWORD, API_DB_PASSWORD, PROCESSOR_DB_PASSWORD
+
+name: wholestory
+
+x-java-service: &java-service
+  restart: unless-stopped
+  networks: [internal]
+  environment: &java-env
+    JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wholestory
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?required}
+      PROCESSOR_DB_PASSWORD: ${PROCESSOR_DB_PASSWORD:?required}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wholestory"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.3.1
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 72
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  redis:
+    image: redis:8.8.3-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ingest:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:?required}-ingest:${IMAGE_TAG:-latest}
+    environment:
+      <<: *java-env
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+    networks: [internal, public]
+    depends_on:
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  processor:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:?required}-processor:${IMAGE_TAG:-latest}
+    environment:
+      <<: *java-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/wholestory
+      DATABASE_USERNAME: wholestory_processor
+      DATABASE_PASSWORD: ${PROCESSOR_DB_PASSWORD:?required}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  api:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:?required}-api:${IMAGE_TAG:-latest}
+    environment:
+      <<: *java-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/wholestory
+      DATABASE_USERNAME: wholestory_api
+      DATABASE_PASSWORD: ${API_DB_PASSWORD:?required}
+    depends_on:
+      postgres: { condition: service_healthy }
+      # api reads processor's analytics views, which processor's migrations create.
+      processor: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  web:
+    image: ${IMAGE_PREFIX:?required}-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8080
+    networks: [internal, public]
+    depends_on:
+      api: { condition: service_healthy }
+
+networks:
+  internal:
+  # Traefik's network, managed by Dokploy.
+  public:
+    external: true
+    name: ${TRAEFIK_NETWORK:-dokploy-network}
+
+volumes:
+  postgres-data:
+  kafka-data:
+  redis-data:

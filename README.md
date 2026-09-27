@@ -24,5 +24,9 @@ Java 27 · Spring Boot 4.1 · Spring Modulith · PostgreSQL · Kafka (KRaft) · 
 ## Build
 
 ```bash
-mvn verify
+docker compose -f infra/docker-compose.yml up -d   # PostgreSQL, Kafka, Redis for local development
+./mvnw verify                                      # backend: unit + Testcontainers integration tests
+corepack pnpm install && corepack pnpm check       # frontend workspace (tracker, web)
 ```
+
+Deployment: see [docs/deployment.md](docs/deployment.md).

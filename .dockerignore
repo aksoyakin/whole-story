@@ -1,0 +1,13 @@
+# Build context: only sources are needed; everything else is excluded.
+**/node_modules
+**/target
+**/.next
+**/dist
+**/test-results
+**/playwright-report
+**/*.log
+**/*.md
+.*
+!.mvn
+infra/postgres
+docs
