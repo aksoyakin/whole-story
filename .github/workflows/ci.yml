@@ -86,12 +86,18 @@ jobs:
     needs: images
     runs-on: ubuntu-latest
     steps:
+      # Dokploy's API redeploys the Compose service, which pulls the images pushed above.
       - name: Trigger Dokploy deployment
         env:
-          DOKPLOY_DEPLOY_WEBHOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
         run: |
-          if [ -z "$DOKPLOY_DEPLOY_WEBHOOK" ]; then
-            echo "DOKPLOY_DEPLOY_WEBHOOK is not configured; skipping deployment."
+          if [ -z "$DOKPLOY_URL" ] || [ -z "$DOKPLOY_API_KEY" ] || [ -z "$DOKPLOY_COMPOSE_ID" ]; then
+            echo "Dokploy secrets are not configured; skipping deployment."
             exit 0
           fi
-          curl -fsS -X POST "$DOKPLOY_DEPLOY_WEBHOOK"
+          curl -fsS -X POST "${DOKPLOY_URL%/}/api/compose.deploy" \
+            -H "x-api-key: $DOKPLOY_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"composeId\": \"$DOKPLOY_COMPOSE_ID\"}"

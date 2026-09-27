@@ -78,6 +78,7 @@ services:
   ingest:
     <<: *java-service
     image: ${IMAGE_PREFIX:?required}-ingest:${IMAGE_TAG:-latest}
+    pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     environment:
       <<: *java-env
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -95,6 +96,7 @@ services:
   processor:
     <<: *java-service
     image: ${IMAGE_PREFIX:?required}-processor:${IMAGE_TAG:-latest}
+    pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     environment:
       <<: *java-env
       DATABASE_URL: jdbc:postgresql://postgres:5432/wholestory
@@ -115,6 +117,7 @@ services:
   api:
     <<: *java-service
     image: ${IMAGE_PREFIX:?required}-api:${IMAGE_TAG:-latest}
+    pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     environment:
       <<: *java-env
       DATABASE_URL: jdbc:postgresql://postgres:5432/wholestory
@@ -132,6 +135,7 @@ services:
 
   web:
     image: ${IMAGE_PREFIX:?required}-web:${IMAGE_TAG:-latest}
+    pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     restart: unless-stopped
     environment:
       API_URL: http://api:8080

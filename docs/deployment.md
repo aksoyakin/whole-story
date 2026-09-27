@@ -54,8 +54,18 @@ Create a **Compose** service:
 | `ingest` | `wholestory.world` | `/api/event` (do not strip the path) | 8081 |
 
 ### 5. Continuous deployment
-Copy the service's deploy webhook URL from Dokploy into the repository secret
-`DOKPLOY_DEPLOY_WEBHOOK`. Without the secret, CI still publishes images and skips the deploy step.
+CI redeploys through the Dokploy API after the images are pushed. Add three repository secrets
+(GitHub → Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `DOKPLOY_URL` | Dokploy panel URL, e.g. `https://dokploy.example.com` (use HTTPS: the API key is sent with every deploy) |
+| `DOKPLOY_API_KEY` | Dokploy → Settings → Profile → API/CLI → generate a token |
+| `DOKPLOY_COMPOSE_ID` | The id at the end of the Compose service URL: `.../services/compose/<composeId>` |
+
+Keep Dokploy's *Autodeploy* off: a push would otherwise deploy before CI has built the new images.
+Without the secrets, CI still publishes images and skips the deploy step. Services use
+`pull_policy: always`, so every deploy pulls the current `latest` images.
 
 ## Registering a site (until Site Management ships)
 
