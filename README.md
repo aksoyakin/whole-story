@@ -29,4 +29,4 @@ docker compose -f infra/docker-compose.yml up -d   # PostgreSQL, Kafka, Redis fo
 corepack pnpm install && corepack pnpm check       # frontend workspace (tracker, web)
 ```
 
-Deployment: see [docs/deployment.md](docs/deployment.md).
+Deployment: see [docs/deployment.md](docs/deployment.md). Design decisions: see [docs/adr](docs/adr/README.md).
