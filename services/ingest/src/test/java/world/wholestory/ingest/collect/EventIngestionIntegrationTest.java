@@ -1,0 +1,111 @@
+package world.wholestory.ingest.collect;
+
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
+import world.wholestory.contracts.RawEventV1;
+import world.wholestory.contracts.Topics;
+import world.wholestory.ingest.TestcontainersConfiguration;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+@Import(TestcontainersConfiguration.class)
+class EventIngestionIntegrationTest {
+
+    private static final String CLIENT_IP = "203.0.113.42";
+
+    @Autowired
+    MockMvc mvc;
+    @Autowired
+    StringRedisTemplate redis;
+    @Autowired
+    KafkaConnectionDetails kafkaConnection;
+    @Autowired
+    JsonMapper jsonMapper;
+
+    @Test
+    void publishesAPrivacySafeEventForARegisteredDomain() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "example.com", siteId.toString());
+
+        mvc.perform(post("/api/event")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .header("User-Agent", "Mozilla/5.0 (Macintosh)")
+                        .with(request -> {
+                            request.setRemoteAddr(CLIENT_IP);
+                            return request;
+                        })
+                        .content("""
+                                {"name":"pageview","url":"https://www.example.com/pricing?utm_source=newsletter","domain":"www.example.com","referrer":"https://news.ycombinator.com/"}
+                                """))
+                .andExpect(status().isAccepted());
+
+        ConsumerRecord<String, byte[]> record = consumeOne();
+        String json = new String(record.value(), StandardCharsets.UTF_8);
+        RawEventV1 event = jsonMapper.readValue(record.value(), RawEventV1.class);
+
+        assertThat(json).doesNotContain(CLIENT_IP).doesNotContain("\"pageview\":true");
+        assertThat(record.key()).isEqualTo(siteId + ":" + event.visitorHash());
+        assertThat(event.siteId()).isEqualTo(siteId);
+        assertThat(event.eventId().version()).isEqualTo(7);
+        assertThat(event.hostname()).isEqualTo("www.example.com");
+        assertThat(event.pathname()).isEqualTo("/pricing");
+        assertThat(event.utmSource()).isEqualTo("newsletter");
+        assertThat(event.referrer()).isEqualTo("https://news.ycombinator.com/");
+    }
+
+    @Test
+    void rejectsUnknownDomains() throws Exception {
+        mvc.perform(post("/api/event")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("""
+                                {"name":"pageview","url":"https://unknown.test/","domain":"unknown.test"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsMalformedPayloads() throws Exception {
+        mvc.perform(post("/api/event").contentType(MediaType.TEXT_PLAIN).content("not json"))
+                .andExpect(status().isBadRequest());
+    }
+
+    private ConsumerRecord<String, byte[]> consumeOne() {
+        Map<String, Object> config = Map.of(
+                "bootstrap.servers", String.join(",", kafkaConnection.getBootstrapServers()),
+                "group.id", "ingest-test-" + UUID.randomUUID(),
+                "auto.offset.reset", "earliest");
+        try (var consumer = new KafkaConsumer<>(config, new StringDeserializer(), new ByteArrayDeserializer())) {
+            consumer.subscribe(List.of(Topics.RAW_EVENTS));
+            long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+            while (System.nanoTime() < deadline) {
+                var records = consumer.poll(Duration.ofMillis(500));
+                if (!records.isEmpty()) {
+                    return records.iterator().next();
+                }
+            }
+        }
+        throw new AssertionError("No event published to " + Topics.RAW_EVENTS);
+    }
+}

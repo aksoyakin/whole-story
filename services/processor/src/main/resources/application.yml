@@ -1,6 +1,29 @@
 spring:
   application:
     name: processor
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/wholestory}
+    username: ${DATABASE_USERNAME:wholestory_processor}
+    password: ${DATABASE_PASSWORD:processor}
+  flyway:
+    # processor owns the analytics schema (D-012); the schema itself is created by the DBA init script.
+    schemas: analytics
+    default-schema: analytics
+    create-schemas: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    consumer:
+      group-id: processor
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      max-poll-records: 500
+    listener:
+      type: batch
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8082

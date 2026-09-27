@@ -1,9 +1,27 @@
 spring:
   application:
     name: ingest
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        linger.ms: 5
+        enable.idempotence: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8081
+  # Behind Traefik (Dokploy): the client IP comes from X-Forwarded-For.
+  forward-headers-strategy: framework
+
+ingest:
+  topic-partitions: 6
 
 management:
   endpoints:

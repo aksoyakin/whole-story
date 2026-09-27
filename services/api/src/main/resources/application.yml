@@ -1,6 +1,15 @@
 spring:
   application:
     name: api
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/wholestory}
+    username: ${DATABASE_USERNAME:wholestory_api}
+    password: ${DATABASE_PASSWORD:api}
+  flyway:
+    # api owns the identity and sites schemas (D-012); analytics is read through processor's api_* views.
+    schemas: identity,sites
+    default-schema: identity
+    create-schemas: false
 
 server:
   port: 8080

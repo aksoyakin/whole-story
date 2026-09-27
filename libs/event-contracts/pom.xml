@@ -14,4 +14,12 @@
     <artifactId>event-contracts</artifactId>
     <name>Whole Story :: Event Contracts</name>
     <description>Versioned Kafka message contracts shared between services</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
