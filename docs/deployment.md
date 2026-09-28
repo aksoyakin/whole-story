@@ -41,9 +41,13 @@ Create a **Compose** service:
   POSTGRES_PASSWORD=<random>
   API_DB_PASSWORD=<random>
   PROCESSOR_DB_PASSWORD=<random>
+  MAXMIND_ACCOUNT_ID=<account id>
+  MAXMIND_LICENSE_KEY=<license key>
   ```
 
   Database passwords are applied only when the PostgreSQL volume is first initialised.
+  The MaxMind credentials come from a free GeoLite2 account and are required: the `geoipupdate` sidecar refuses to
+  start without them. `ingest` itself tolerates a missing database and stores events without a location.
 
 ### 4. Domains (Dokploy → Domains, HTTPS with Let's Encrypt)
 
@@ -74,6 +78,17 @@ register one from the Dokploy terminal of the `redis` container:
 
 ```bash
 redis-cli HSET sites:domains example.com "$(cat /proc/sys/kernel/random/uuid)"
+```
+
+## GeoIP database
+
+`ingest` resolves country, region and city before discarding the IP address. The GeoLite2 City database is licensed
+and never committed; a `maxmindinc/geoipupdate` sidecar downloads it into the `geoip` volume and refreshes it every
+72 hours, and `ingest` mounts that volume read-only. For local development, download it once:
+
+```bash
+infra/scripts/download-geoip.sh                     # credentials from .env, writes infra/geoip/
+GEOIP_DATABASE=$PWD/infra/geoip/GeoLite2-City.mmdb mvn -pl services/ingest spring-boot:run
 ```
 
 ## Base images

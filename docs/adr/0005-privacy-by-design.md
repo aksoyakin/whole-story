@@ -18,8 +18,9 @@ counted once per day, and events need a country.
 - The tracker stores nothing in the browser.
 
 ## Implementation status
-Hashing, the daily salt and discarding the IP are implemented. GeoIP and the 30 minute rotation grace period are
-planned for the next milestone; the processor already continues sessions from the previous hash when it is present.
+Hashing, the daily salt, discarding the IP and the GeoIP lookup (see [ADR 0013](0013-geoip-lookups-and-database-distribution.md))
+are implemented. The 30 minute rotation grace period is still open: `ingest` does not yet compute the previous
+salt's hash, although the processor already continues sessions from the previous hash when it is present.
 
 ## Consequences
 - No IP address reaches Kafka, logs or the database. An integration test asserts that the published message does

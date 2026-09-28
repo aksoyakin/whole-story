@@ -15,3 +15,4 @@
 | [0010](0010-pure-domain-layer.md) | A pure domain layer and manual mappers | Accepted |
 | [0011](0011-backend-for-frontend.md) | The web app as a backend-for-frontend | Accepted |
 | [0012](0012-build-and-deployment.md) | Build and deployment | Accepted |
+| [0013](0013-geoip-lookups-and-database-distribution.md) | GeoIP lookups and database distribution | Accepted |

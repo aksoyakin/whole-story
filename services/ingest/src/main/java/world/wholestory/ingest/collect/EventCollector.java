@@ -6,6 +6,8 @@ import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.UuidV7;
+import world.wholestory.ingest.geo.GeoLocation;
+import world.wholestory.ingest.geo.GeoResolver;
 import world.wholestory.ingest.privacy.VisitorHasher;
 import world.wholestory.ingest.publish.RawEventPublisher;
 
@@ -21,12 +23,13 @@ class EventCollector {
 
     private final SiteRegistry siteRegistry;
     private final VisitorHasher visitorHasher;
+    private final GeoResolver geoResolver;
     private final RawEventPublisher publisher;
     private final Clock clock;
 
     /**
-     * Turns a tracker payload into a privacy-safe event. The IP address is only used for hashing
-     * (and GeoIP in M2) and is dropped when this method returns.
+     * Turns a tracker payload into a privacy-safe event. The IP address is only used for hashing and the GeoIP
+     * lookup, and is dropped when this method returns.
      */
     void collect(IncomingEvent incoming, String ipAddress, String userAgent) {
         if (incoming.name() == null || incoming.name().isBlank() || incoming.name().length() > MAX_NAME_LENGTH) {
@@ -42,6 +45,7 @@ class EventCollector {
         Instant now = clock.instant();
         String agent = userAgent == null ? "" : userAgent;
         long visitorHash = visitorHasher.hash(now, siteId, ipAddress, agent);
+        GeoLocation location = geoResolver.resolve(ipAddress);
 
         publisher.publish(new RawEventV1(
                 RawEventV1.SCHEMA_VERSION,
@@ -59,9 +63,9 @@ class EventCollector {
                 url.getQueryParams().getFirst("utm_campaign"),
                 url.getQueryParams().getFirst("utm_content"),
                 url.getQueryParams().getFirst("utm_term"),
-                null,
-                null,
-                null,
+                location.countryCode(),
+                location.subdivisionCode(),
+                location.cityGeonameId(),
                 agent,
                 incoming.props()));
     }

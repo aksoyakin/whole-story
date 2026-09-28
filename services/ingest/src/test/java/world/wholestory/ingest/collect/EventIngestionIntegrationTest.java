@@ -28,12 +28,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "ingest.geoip-database=src/test/resources/geoip/GeoIP2-City-Test.mmdb")
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class EventIngestionIntegrationTest {
 
-    private static final String CLIENT_IP = "203.0.113.42";
+    /** In MaxMind's test database: Boxford, England. */
+    private static final String CLIENT_IP = "2.125.160.216";
 
     @Autowired
     MockMvc mvc;
@@ -73,6 +74,10 @@ class EventIngestionIntegrationTest {
         assertThat(event.pathname()).isEqualTo("/pricing");
         assertThat(event.utmSource()).isEqualTo("newsletter");
         assertThat(event.referrer()).isEqualTo("https://news.ycombinator.com/");
+        // The location survives, the address it came from does not.
+        assertThat(event.countryCode()).isEqualTo("GB");
+        assertThat(event.subdivisionCode()).isEqualTo("GB-ENG");
+        assertThat(event.cityGeonameId()).isEqualTo(2655045);
     }
 
     @Test

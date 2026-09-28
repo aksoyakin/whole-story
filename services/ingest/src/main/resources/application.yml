@@ -22,6 +22,8 @@ server:
 
 ingest:
   topic-partitions: 6
+  # Maintained by the geoipupdate sidecar in production; locally: infra/scripts/download-geoip.sh
+  geoip-database: ${GEOIP_DATABASE:/geoip/GeoLite2-City.mmdb}
 
 management:
   endpoints:

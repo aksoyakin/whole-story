@@ -30,3 +30,7 @@ corepack pnpm install && corepack pnpm check       # frontend workspace (tracker
 ```
 
 Deployment: see [docs/deployment.md](docs/deployment.md). Design decisions: see [docs/adr](docs/adr/README.md).
+
+## Attribution
+
+This product includes GeoLite2 data created by MaxMind, available from [maxmind.com](https://www.maxmind.com).

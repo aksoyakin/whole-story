@@ -20,6 +20,8 @@ next-env.d.ts
 
 # GeoIP databases (downloaded, licensed)
 *.mmdb
+# except MaxMind's test fixture, which is Apache-2.0/MIT and holds fabricated records
+!services/ingest/src/test/resources/geoip/*.mmdb
 
 # IDE / OS
 .idea/
