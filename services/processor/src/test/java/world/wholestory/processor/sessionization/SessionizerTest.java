@@ -3,6 +3,8 @@ package world.wholestory.processor.sessionization;
 import org.junit.jupiter.api.Test;
 import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.UuidV7;
+import world.wholestory.processor.enrichment.ClientProfile;
+import world.wholestory.processor.enrichment.EnrichedEvent;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -57,19 +59,20 @@ class SessionizerTest {
     void continuesTheSessionWhenTheDailySaltRotates() {
         UUID beforeMidnight = sessionizer.sessionize(List.of(pageview(1L, T0))).getFirst().sessionId();
 
-        RawEventV1 afterRotation = event(99L, 1L, T0.plusSeconds(60));
+        EnrichedEvent afterRotation = event(99L, 1L, T0.plusSeconds(60));
         UUID afterMidnight = sessionizer.sessionize(List.of(afterRotation)).getFirst().sessionId();
 
         assertThat(afterMidnight).isEqualTo(beforeMidnight);
     }
 
-    private static RawEventV1 pageview(long visitorHash, Instant at) {
+    private static EnrichedEvent pageview(long visitorHash, Instant at) {
         return event(visitorHash, null, at);
     }
 
-    private static RawEventV1 event(long visitorHash, Long previousVisitorHash, Instant at) {
-        return new RawEventV1(1, UuidV7.generate(at), at, SITE, visitorHash, previousVisitorHash, "pageview",
+    private static EnrichedEvent event(long visitorHash, Long previousVisitorHash, Instant at) {
+        RawEventV1 raw = new RawEventV1(1, UuidV7.generate(at), at, SITE, visitorHash, previousVisitorHash, "pageview",
                 "example.com", "/", null, null, null, null, null, null, null, null, null, "UA", null);
+        return new EnrichedEvent(raw, ClientProfile.UNKNOWN);
     }
 
     private static final class InMemorySessionStore implements SessionStore {

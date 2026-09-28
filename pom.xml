@@ -35,6 +35,7 @@
         <archunit.version>1.5.1</archunit.version>
         <springdoc.version>3.1.1</springdoc.version>
         <geoip2.version>5.2.0</geoip2.version>
+        <yauaa.version>8.2.0</yauaa.version>
     </properties>
 
     <dependencyManagement>
@@ -55,6 +56,11 @@
                 <groupId>com.maxmind.geoip2</groupId>
                 <artifactId>geoip2</artifactId>
                 <version>${geoip2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>nl.basjes.parse.useragent</groupId>
+                <artifactId>yauaa</artifactId>
+                <version>${yauaa.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>

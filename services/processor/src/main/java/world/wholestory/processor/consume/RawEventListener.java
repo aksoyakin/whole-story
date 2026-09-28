@@ -9,6 +9,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.Topics;
+import world.wholestory.processor.enrichment.EventEnricher;
 import world.wholestory.processor.persistence.BatchPersister;
 import world.wholestory.processor.sessionization.Sessionizer;
 
@@ -24,6 +25,7 @@ import java.util.List;
 class RawEventListener {
 
     private final JsonMapper jsonMapper;
+    private final EventEnricher enricher;
     private final Sessionizer sessionizer;
     private final BatchPersister persister;
 
@@ -33,7 +35,7 @@ class RawEventListener {
         for (ConsumerRecord<String, byte[]> record : records) {
             decode(record, events);
         }
-        int stored = persister.persist(sessionizer.sessionize(events));
+        int stored = persister.persist(sessionizer.sessionize(enricher.enrich(events)));
         log.debug("Batch of {} records, {} new events stored", records.size(), stored);
     }
 

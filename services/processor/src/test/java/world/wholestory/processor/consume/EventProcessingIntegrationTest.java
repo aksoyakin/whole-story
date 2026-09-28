@@ -30,6 +30,10 @@ import static org.awaitility.Awaitility.await;
 @Import(TestcontainersConfiguration.class)
 class EventProcessingIntegrationTest {
 
+    private static final String CHROME_MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            + "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+    private static final String GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+
     @Autowired
     KafkaConnectionDetails kafka;
     @Autowired
@@ -54,7 +58,8 @@ class EventProcessingIntegrationTest {
         await().pollDelay(Duration.ofSeconds(2)).until(() -> true);
 
         Map<String, Object> session = jdbc.sql("""
-                        select count(*) over () as sessions, pageviews, events, entry_page, exit_page, is_bounce, duration_seconds
+                        select count(*) over () as sessions, pageviews, events, entry_page, exit_page, is_bounce,
+                               duration_seconds, browser, os, device_type
                         from analytics.sessions where site_id = ?""")
                 .param(siteId).query().singleRow();
         assertThat(session)
@@ -65,6 +70,11 @@ class EventProcessingIntegrationTest {
                 .containsEntry("exit_page", "/pricing")
                 .containsEntry("is_bounce", false)
                 .containsEntry("duration_seconds", 40);
+
+        assertThat(session)
+                .containsEntry("browser", "Chrome")
+                .containsEntry("os", "Mac OS")
+                .containsEntry("device_type", "desktop");
 
         assertThat(count("select coalesce(sum(pageviews), 0) from analytics.page_hourly where site_id = ?", siteId))
                 .isEqualTo(2);
@@ -87,6 +97,26 @@ class EventProcessingIntegrationTest {
 
         assertThat(count("select count(*) from analytics.sessions where site_id = ?", siteId)).isEqualTo(1);
         assertThat(count("select sum(pageviews) from analytics.sessions where site_id = ?", siteId)).isEqualTo(2);
+    }
+
+    @Test
+    void neverStoresBotTraffic() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        // One partition in tests, so the bot is processed before the visitor that follows it.
+        send(List.of(
+                event(siteId, "pageview", "/", now, GOOGLEBOT, 7L),
+                event(siteId, "pageview", "/", now.plusSeconds(1), CHROME_MAC, 8L)));
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(1));
+
+        assertThat(jdbc.sql("select browser from analytics.events where site_id = ?").param(siteId)
+                .query(String.class).single()).isEqualTo("Chrome");
+        assertThat(count("select count(*) from analytics.sessions where site_id = ?", siteId)).isEqualTo(1);
+        assertThat(count("select coalesce(sum(pageviews), 0) from analytics.page_hourly where site_id = ?", siteId))
+                .isEqualTo(1);
     }
 
     @Test
@@ -115,7 +145,11 @@ class EventProcessingIntegrationTest {
     }
 
     private static RawEventV1 event(UUID siteId, String name, String path, Instant at) {
-        return new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(at), at, siteId, 42L, null, name,
-                "example.com", path, null, null, null, null, null, null, null, null, null, "UA", null);
+        return event(siteId, name, path, at, CHROME_MAC, 42L);
+    }
+
+    private static RawEventV1 event(UUID siteId, String name, String path, Instant at, String userAgent, long visitor) {
+        return new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(at), at, siteId, visitor, null, name,
+                "example.com", path, null, null, null, null, null, null, null, null, null, userAgent, null);
     }
 }

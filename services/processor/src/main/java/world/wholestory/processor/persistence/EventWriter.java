@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 import world.wholestory.contracts.RawEventV1;
+import world.wholestory.processor.enrichment.ClientProfile;
 import world.wholestory.processor.sessionization.SessionizedEvent;
 
 import java.util.ArrayList;
@@ -40,6 +41,7 @@ class EventWriter {
         List<Object> params = new ArrayList<>(events.size() * 24);
         for (SessionizedEvent sessionized : events) {
             RawEventV1 e = sessionized.event();
+            ClientProfile client = sessionized.client();
             params.add(e.eventId());
             params.add(utc(e.timestamp()));
             params.add(e.siteId());
@@ -58,11 +60,11 @@ class EventWriter {
             params.add(e.countryCode());
             params.add(e.subdivisionCode());
             params.add(e.cityGeonameId());
-            params.add(null); // browser: M2
-            params.add(null); // browser_version: M2
-            params.add(null); // os: M2
-            params.add(null); // os_version: M2
-            params.add(null); // device_type: M2
+            params.add(client.browser());
+            params.add(client.browserVersion());
+            params.add(client.os());
+            params.add(client.osVersion());
+            params.add(client.deviceType());
             params.add(e.props() == null ? null : jsonMapper.writeValueAsString(e.props()));
         }
         return new HashSet<>(jdbc.sql(INSERT.formatted(values(ROW, events.size())))

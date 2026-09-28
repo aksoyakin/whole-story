@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.UuidV7;
+import world.wholestory.processor.enrichment.EnrichedEvent;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -26,12 +27,13 @@ public class Sessionizer {
 
     private final SessionStore store;
 
-    public List<SessionizedEvent> sessionize(List<RawEventV1> events) {
+    public List<SessionizedEvent> sessionize(List<EnrichedEvent> events) {
         Map<String, SessionState> sessions = new HashMap<>(store.load(keysOf(events)));
         Map<String, SessionState> changed = new HashMap<>();
         List<SessionizedEvent> result = new ArrayList<>(events.size());
 
-        for (RawEventV1 event : events) {
+        for (EnrichedEvent enriched : events) {
+            RawEventV1 event = enriched.event();
             String key = key(event.siteId(), event.visitorHash());
             SessionState session = sessions.get(key);
             if (session == null && event.previousVisitorHash() != null) {
@@ -45,7 +47,7 @@ public class Sessionizer {
             }
             sessions.put(key, session);
             changed.put(key, session);
-            result.add(new SessionizedEvent(event, session.sessionId(), session.startedAt()));
+            result.add(new SessionizedEvent(enriched, session.sessionId(), session.startedAt()));
         }
 
         store.save(changed);
@@ -56,9 +58,10 @@ public class Sessionizer {
         return Duration.between(session.lastSeenAt(), event.timestamp()).compareTo(SESSION_TIMEOUT) > 0;
     }
 
-    private static Set<String> keysOf(List<RawEventV1> events) {
+    private static Set<String> keysOf(List<EnrichedEvent> events) {
         Set<String> keys = new LinkedHashSet<>();
-        for (RawEventV1 event : events) {
+        for (EnrichedEvent enriched : events) {
+            RawEventV1 event = enriched.event();
             keys.add(key(event.siteId(), event.visitorHash()));
             if (event.previousVisitorHash() != null) {
                 keys.add(key(event.siteId(), event.previousVisitorHash()));

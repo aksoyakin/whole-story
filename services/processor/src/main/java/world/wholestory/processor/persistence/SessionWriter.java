@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import world.wholestory.contracts.RawEventV1;
+import world.wholestory.processor.enrichment.ClientProfile;
 import world.wholestory.processor.sessionization.SessionizedEvent;
 
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ class SessionWriter {
         for (List<SessionizedEvent> sessionEvents : bySession.values()) {
             SessionizedEvent first = sessionEvents.getFirst();
             RawEventV1 entry = first.event();
+            ClientProfile client = first.client();
             RawEventV1 last = sessionEvents.getLast().event();
             long pageviews = sessionEvents.stream().filter(e -> e.event().representsPageview()).count();
 
@@ -70,11 +72,11 @@ class SessionWriter {
             params.add(entry.countryCode());
             params.add(entry.subdivisionCode());
             params.add(entry.cityGeonameId());
-            params.add(null); // browser: M2
-            params.add(null); // browser_version: M2
-            params.add(null); // os: M2
-            params.add(null); // os_version: M2
-            params.add(null); // device_type: M2
+            params.add(client.browser());
+            params.add(client.browserVersion());
+            params.add(client.os());
+            params.add(client.osVersion());
+            params.add(client.deviceType());
         }
         jdbc.sql(UPSERT.formatted(values(ROW, bySession.size()))).params(params).update();
     }
