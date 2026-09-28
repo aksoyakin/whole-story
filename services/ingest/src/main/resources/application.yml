@@ -24,6 +24,8 @@ ingest:
   topic-partitions: 6
   # Maintained by the geoipupdate sidecar in production; locally: infra/scripts/download-geoip.sh
   geoip-database: ${GEOIP_DATABASE:/geoip/GeoLite2-City.mmdb}
+  # One visitor reporting more than this in a minute is not a person; see ADR 0016.
+  max-events-per-visitor-per-minute: 60
 
 management:
   endpoints:

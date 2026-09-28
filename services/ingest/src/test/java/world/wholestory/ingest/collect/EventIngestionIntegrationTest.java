@@ -62,7 +62,7 @@ class EventIngestionIntegrationTest {
                                 """))
                 .andExpect(status().isAccepted());
 
-        ConsumerRecord<String, byte[]> record = consumeOne();
+        ConsumerRecord<String, byte[]> record = consumeFor(siteId);
         String json = new String(record.value(), StandardCharsets.UTF_8);
         RawEventV1 event = jsonMapper.readValue(record.value(), RawEventV1.class);
 
@@ -81,6 +81,44 @@ class EventIngestionIntegrationTest {
     }
 
     @Test
+    void acceptsAnOriginThatMatchesTheTrackedDomain() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "origin-ok.test", siteId.toString());
+
+        mvc.perform(event("origin-ok.test").header("Origin", "https://www.origin-ok.test"))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void rejectsAnOriginFromAnotherSite() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "origin-bad.test", siteId.toString());
+
+        // A page on evil.test must not be able to report events for someone else's site.
+        mvc.perform(event("origin-bad.test").header("Origin", "https://evil.test"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void acceptsAMissingOriginBecauseBrowsersDoNotAlwaysSendIt() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "origin-absent.test", siteId.toString());
+
+        mvc.perform(event("origin-absent.test")).andExpect(status().isAccepted());
+    }
+
+    @Test
+    void rejectsAVisitorThatSendsTooManyEventsInAMinute() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "flood.test", siteId.toString());
+
+        for (int i = 0; i < 60; i++) {
+            mvc.perform(event("flood.test")).andExpect(status().isAccepted());
+        }
+        mvc.perform(event("flood.test")).andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void rejectsUnknownDomains() throws Exception {
         mvc.perform(post("/api/event")
                         .contentType(MediaType.TEXT_PLAIN)
@@ -96,7 +134,19 @@ class EventIngestionIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
-    private ConsumerRecord<String, byte[]> consumeOne() {
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder event(String domain) {
+        return post("/api/event")
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("User-Agent", "Mozilla/5.0 (Macintosh)")
+                .with(request -> {
+                    request.setRemoteAddr(CLIENT_IP);
+                    return request;
+                })
+                .content("{\"name\":\"pageview\",\"url\":\"https://" + domain + "/\",\"domain\":\"" + domain + "\"}");
+    }
+
+    /** Other tests in this class publish to the same topic, so the record has to be matched by site. */
+    private ConsumerRecord<String, byte[]> consumeFor(UUID siteId) {
         Map<String, Object> config = Map.of(
                 "bootstrap.servers", String.join(",", kafkaConnection.getBootstrapServers()),
                 "group.id", "ingest-test-" + UUID.randomUUID(),
@@ -105,12 +155,13 @@ class EventIngestionIntegrationTest {
             consumer.subscribe(List.of(Topics.RAW_EVENTS));
             long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
             while (System.nanoTime() < deadline) {
-                var records = consumer.poll(Duration.ofMillis(500));
-                if (!records.isEmpty()) {
-                    return records.iterator().next();
+                for (ConsumerRecord<String, byte[]> record : consumer.poll(Duration.ofMillis(500))) {
+                    if (record.key() != null && record.key().startsWith(siteId + ":")) {
+                        return record;
+                    }
                 }
             }
         }
-        throw new AssertionError("No event published to " + Topics.RAW_EVENTS);
+        throw new AssertionError("No event for site " + siteId + " published to " + Topics.RAW_EVENTS);
     }
 }

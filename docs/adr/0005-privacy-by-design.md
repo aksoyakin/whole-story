@@ -27,6 +27,10 @@ full day after the grace period ended, and yesterday's salt being alive is exact
 possible. A salt now expires at an absolute deadline, 30 minutes into the following day. The previous day's salt is
 also only ever read, never created, so a day without traffic cannot be given a salt afterwards.
 
+Measured in production before the fix, at 18:10 UTC: the previous day's salt still had about two hours left to
+live, eighteen hours after the grace period should have removed it, and the current day's salt was set to outlive
+its deadline by seventeen hours. For that whole day, linking a visitor across the midnight boundary was possible.
+
 ## Consequences
 - No IP address reaches Kafka, logs or the database. An integration test asserts that the published message does
   not contain the client IP; a Playwright test asserts that no cookie or storage entry is created.
