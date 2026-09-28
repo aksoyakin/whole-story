@@ -16,4 +16,8 @@ public record SessionizedEvent(EnrichedEvent enriched, UUID sessionId, Instant s
     public ClientProfile client() {
         return enriched.client();
     }
+
+    public String referrerSource() {
+        return enriched.referrerSource();
+    }
 }

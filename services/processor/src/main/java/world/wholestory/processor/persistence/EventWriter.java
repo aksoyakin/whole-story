@@ -51,7 +51,7 @@ class EventWriter {
             params.add(e.hostname());
             params.add(e.pathname());
             params.add(e.referrer());
-            params.add(null); // referrer_source: M2
+            params.add(sessionized.referrerSource());
             params.add(e.utmSource());
             params.add(e.utmMedium());
             params.add(e.utmCampaign());

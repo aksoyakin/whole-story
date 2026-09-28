@@ -18,7 +18,7 @@ class EventEnricherTest {
     private static final String GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
-    private final EventEnricher enricher = new EventEnricher(new UserAgentParser(), meters);
+    private final EventEnricher enricher = new EventEnricher(new UserAgentParser(), new ReferrerClassifier(), meters);
 
     @Test
     void dropsBotsAndKeepsVisitors() {

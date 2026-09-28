@@ -31,6 +31,12 @@ corepack pnpm install && corepack pnpm check       # frontend workspace (tracker
 
 Deployment: see [docs/deployment.md](docs/deployment.md). Design decisions: see [docs/adr](docs/adr/README.md).
 
+## Licence
+
+Whole Story is licensed under the [GNU General Public License v3](LICENSE). The referrer database it bundles
+(`referers.yml`, from [referer-parser](https://github.com/snowplow-referer-parser/referer-parser), based on
+Matomo's `SearchEngines.php` and `Socials.php`, copyright 2012 Matthieu Aubry) is published under that licence.
+
 ## Attribution
 
 This product includes GeoLite2 data created by MaxMind, available from [maxmind.com](https://www.maxmind.com).

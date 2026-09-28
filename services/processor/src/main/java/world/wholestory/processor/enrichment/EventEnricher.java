@@ -16,10 +16,12 @@ import java.util.List;
 public class EventEnricher {
 
     private final UserAgentParser userAgentParser;
+    private final ReferrerClassifier referrerClassifier;
     private final Counter botsDropped;
 
-    EventEnricher(UserAgentParser userAgentParser, MeterRegistry meters) {
+    EventEnricher(UserAgentParser userAgentParser, ReferrerClassifier referrerClassifier, MeterRegistry meters) {
         this.userAgentParser = userAgentParser;
+        this.referrerClassifier = referrerClassifier;
         this.botsDropped = Counter.builder("events.dropped")
                 .tag("reason", "bot")
                 .description("Events discarded because the User-Agent is not a human visitor")
@@ -31,7 +33,8 @@ public class EventEnricher {
         for (RawEventV1 event : events) {
             userAgentParser.parse(event.userAgent())
                     .ifPresentOrElse(
-                            client -> enriched.add(new EnrichedEvent(event, client)),
+                            client -> enriched.add(new EnrichedEvent(event, client,
+                                    referrerClassifier.classify(event.referrer(), event.hostname()))),
                             botsDropped::increment);
         }
         return enriched;

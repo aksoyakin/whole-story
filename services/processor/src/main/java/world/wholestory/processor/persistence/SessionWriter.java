@@ -63,7 +63,7 @@ class SessionWriter {
             params.add(entry.pathname());
             params.add(last.pathname());
             params.add(entry.referrer());
-            params.add(null); // referrer_source: M2
+            params.add(first.referrerSource());
             params.add(entry.utmSource());
             params.add(entry.utmMedium());
             params.add(entry.utmCampaign());

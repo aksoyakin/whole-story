@@ -120,6 +120,25 @@ class EventProcessingIntegrationTest {
     }
 
     @Test
+    void storesTheTrafficSourceOfAVisit() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        RawEventV1 fromGoogle = new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(now), now, siteId, 9L, null,
+                "pageview", "example.com", "/", "https://www.google.de/", null, null, null, null, null, null, null,
+                null, CHROME_MAC, null);
+        send(List.of(fromGoogle));
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(1));
+
+        assertThat(jdbc.sql("select referrer_source from analytics.events where site_id = ?").param(siteId)
+                .query(String.class).single()).isEqualTo("Google");
+        assertThat(jdbc.sql("select referrer_source from analytics.sessions where site_id = ?").param(siteId)
+                .query(String.class).single()).isEqualTo("Google");
+    }
+
+    @Test
     void apiRoleCanReadTheContractViewsButNotTheTables() {
         List<String> tables = jdbc.sql("""
                         select table_name from information_schema.role_table_grants

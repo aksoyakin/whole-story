@@ -17,3 +17,4 @@
 | [0012](0012-build-and-deployment.md) | Build and deployment | Accepted |
 | [0013](0013-geoip-lookups-and-database-distribution.md) | GeoIP lookups and database distribution | Accepted |
 | [0014](0014-user-agent-parsing-and-bot-filtering.md) | User-Agent parsing and bot filtering | Accepted |
+| [0015](0015-referrer-source-classification.md) | Referrer source classification | Accepted |
