@@ -18,9 +18,14 @@ counted once per day, and events need a country.
 - The tracker stores nothing in the browser.
 
 ## Implementation status
-Hashing, the daily salt, discarding the IP and the GeoIP lookup (see [ADR 0013](0013-geoip-lookups-and-database-distribution.md))
-are implemented. The 30 minute rotation grace period is still open: `ingest` does not yet compute the previous
-salt's hash, although the processor already continues sessions from the previous hash when it is present.
+Fully implemented: hashing, the daily salt, discarding the IP, the GeoIP lookup
+(see [ADR 0013](0013-geoip-lookups-and-database-distribution.md)) and the rotation grace period.
+
+The grace period needed a correction to hold its promise. Salts were given a 25 hour time-to-live counted from
+first use, but they are created lazily: a salt first needed at 14:00 survived until 15:00 the next day, roughly a
+full day after the grace period ended, and yesterday's salt being alive is exactly what makes cross-day linking
+possible. A salt now expires at an absolute deadline, 30 minutes into the following day. The previous day's salt is
+also only ever read, never created, so a day without traffic cannot be given a salt afterwards.
 
 ## Consequences
 - No IP address reaches Kafka, logs or the database. An integration test asserts that the published message does

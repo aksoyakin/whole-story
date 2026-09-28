@@ -9,6 +9,7 @@ import world.wholestory.contracts.UuidV7;
 import world.wholestory.ingest.geo.GeoLocation;
 import world.wholestory.ingest.geo.GeoResolver;
 import world.wholestory.ingest.privacy.VisitorHasher;
+import world.wholestory.ingest.privacy.VisitorIdentity;
 import world.wholestory.ingest.publish.RawEventPublisher;
 
 import java.time.Clock;
@@ -44,7 +45,7 @@ class EventCollector {
 
         Instant now = clock.instant();
         String agent = userAgent == null ? "" : userAgent;
-        long visitorHash = visitorHasher.hash(now, siteId, ipAddress, agent);
+        VisitorIdentity visitor = visitorHasher.identify(now, siteId, ipAddress, agent);
         GeoLocation location = geoResolver.resolve(ipAddress);
 
         publisher.publish(new RawEventV1(
@@ -52,8 +53,8 @@ class EventCollector {
                 UuidV7.generate(now),
                 now,
                 siteId,
-                visitorHash,
-                null,
+                visitor.hash(),
+                visitor.previousHash(),
                 incoming.name(),
                 url.getHost(),
                 url.getPath() == null || url.getPath().isEmpty() ? "/" : url.getPath(),

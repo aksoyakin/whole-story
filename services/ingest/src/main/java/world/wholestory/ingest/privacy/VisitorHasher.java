@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
@@ -21,11 +22,27 @@ public class VisitorHasher {
 
     private static final byte SEPARATOR = 0;
 
-    private final DailySaltProvider saltProvider;
+    private final DailySalts salts;
 
-    public long hash(Instant at, UUID siteId, String ipAddress, String userAgent) {
-        byte[] salt = saltProvider.saltFor(at.atZone(ZoneOffset.UTC).toLocalDate());
-        return hash(salt, siteId, ipAddress, userAgent);
+    /**
+     * For the first 30 minutes of a UTC day the visitor is also hashed with the previous day's salt, so that the
+     * processor can continue a session that started before midnight instead of splitting it in two (D-028).
+     */
+    public VisitorIdentity identify(Instant at, UUID siteId, String ipAddress, String userAgent) {
+        LocalDate today = at.atZone(ZoneOffset.UTC).toLocalDate();
+        long hash = hash(salts.saltFor(today), siteId, ipAddress, userAgent);
+        if (!isWithinRotationGrace(at, today)) {
+            return new VisitorIdentity(hash, null);
+        }
+        Long previousHash = salts.existingSaltFor(today.minusDays(1))
+                .map(salt -> hash(salt, siteId, ipAddress, userAgent))
+                .orElse(null);
+        return new VisitorIdentity(hash, previousHash);
+    }
+
+    private static boolean isWithinRotationGrace(Instant at, LocalDate today) {
+        Instant midnight = today.atStartOfDay(ZoneOffset.UTC).toInstant();
+        return at.isBefore(midnight.plus(DailySaltProvider.ROTATION_GRACE));
     }
 
     static long hash(byte[] salt, UUID siteId, String ipAddress, String userAgent) {
