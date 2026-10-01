@@ -94,6 +94,50 @@ psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZ
 
 Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
+## Kafka topics are created at startup
+
+Auto-creation is off on the broker, so every topic is declared as a `NewTopic` bean by the service that owns it:
+`raw-events` by `ingest`, `site-events` by `api` (ADR 0019). Those beans run once, while the application context
+starts.
+
+Deleting a topic is therefore a two-step operation. A topic deleted while its owner is running is not recreated, and
+the owner then fails to produce to it: `api` leaves the `SiteRegistered` publication in `platform.event_publication`
+with no completion date, and `ingest` cannot hand over the events it collects. **After deleting a topic, redeploy.**
+On the way back up the services recreate their topics, and `api` resends the publications that never completed
+(`spring.modulith.events.republish-outstanding-events-on-restart`, ADR 0009).
+
+## Starting over with empty data
+
+Only the data is removed; the roles, schemas and volumes stay. Run these in the Dokploy container terminals, in
+this order.
+
+```sql
+-- postgres, as the superuser: remove the data, keep the schema
+truncate analytics.events, analytics.sessions, analytics.page_hourly, analytics.custom_event_hourly;
+truncate sites.sites, sites.goals, sites.ip_exclusions, sites.page_exclusions, identity.memberships,
+         identity.password_reset_tokens, identity.organizations, identity.users, platform.event_publication;
+```
+
+```bash
+# kafka: drop both topics, including the compacted one that would otherwise replay old sites
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic raw-events
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic site-events
+
+# redis: sessionization state and the tracked-domain lookup, plus the user sessions
+redis-cli FLUSHALL
+```
+
+Then redeploy, which is what brings the topics back, and register again from the dashboard. Verify in this order:
+
+```bash
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list   # both topics present
+redis-cli HGETALL sites:domains                                          # domain → the new site id
+```
+
+```sql
+select event_type, completion_date from platform.event_publication;      -- completion date is set
+```
+
 ## Base images
 
 There is no official `eclipse-temurin:27` image yet. `infra/docker/service.Dockerfile` installs the
