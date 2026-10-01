@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import world.wholestory.api.shared.domain.AlreadyExistsException;
 import world.wholestory.api.shared.domain.DomainException;
+import world.wholestory.api.shared.domain.NotFoundException;
+import world.wholestory.api.shared.domain.NotPermittedException;
 
 /**
  * Turns domain and authentication failures into status codes. No message is returned: the status is all the web
@@ -18,6 +20,17 @@ class ApiExceptionHandler {
     @ExceptionHandler(AlreadyExistsException.class)
     ResponseEntity<Void> alreadyExists() {
         return ResponseEntity.status(HttpStatus.CONFLICT).build();
+    }
+
+    /** Also the answer for something that exists but is not the caller's, so the two cannot be told apart. */
+    @ExceptionHandler(NotFoundException.class)
+    ResponseEntity<Void> notFound() {
+        return ResponseEntity.notFound().build();
+    }
+
+    @ExceptionHandler(NotPermittedException.class)
+    ResponseEntity<Void> notPermitted() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
     @ExceptionHandler(DomainException.class)

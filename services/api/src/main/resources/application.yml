@@ -6,10 +6,26 @@ spring:
     username: ${DATABASE_USERNAME:wholestory_api}
     password: ${DATABASE_PASSWORD:api}
   flyway:
-    # api owns the identity and sites schemas (D-012); analytics is read through processor's api_* views.
-    schemas: identity,sites
+    # api owns identity, sites and platform (D-012); analytics is read through processor's api_* views.
+    schemas: identity,sites,platform
     default-schema: identity
     create-schemas: false
+  modulith:
+    events:
+      jdbc:
+        schema: platform
+        schema-initialization:
+          # Off explicitly: naming a schema otherwise makes Modulith run CREATE SCHEMA at startup, which the api
+          # role has no privilege for and does not need — Flyway owns every table in this database.
+          enabled: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        enable.idempotence: true
   jpa:
     # Flyway owns the schema; Hibernate only checks that the mapping still matches it.
     hibernate:

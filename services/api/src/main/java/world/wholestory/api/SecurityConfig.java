@@ -49,9 +49,6 @@ class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         // The generated contract feeds the web client's types; api is internal either way.
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
-                        // TODO(M3.2): authorise by site ownership once Site Management knows who owns what.
-                        // Left open so that this slice does not take the live dashboard down with it.
-                        .requestMatchers("/api/sites/**").permitAll()
                         .anyRequest().authenticated())
                 // An unauthenticated call gets a bare 401 for the Next server to turn into a redirect; a login
                 // form served from api would never be seen by anyone.

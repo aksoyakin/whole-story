@@ -1,6 +1,6 @@
 # 0009. Transactional outbox with Spring Modulith
 
-- Status: Accepted (to be implemented with Site Management)
+- Status: Accepted, implemented
 - Date: 2026-09-26
 
 ## Context
@@ -12,7 +12,25 @@ Domain events leaving the `api` service go through a transactional outbox, using
 publication registry (JDBC) and event externalization to Kafka rather than a hand-written outbox table.
 Example flow: `SiteRegistered` → outbox → Kafka → `ingest` adds the domain to its allow-list in Redis.
 
+## Implementation status
+Implemented with Site Management. Three details were decided while building it:
+
+- The **JDBC** registry rather than the JPA one, because only the JDBC variant lets the table be placed in a
+  schema of its own (`spring.modulith.events.jdbc.schema`), and the outbox is neither bounded context's data.
+- Modulith's own schema initialisation is **switched off** and the table is created by a Flyway migration like
+  every other table here. Naming a schema otherwise makes Modulith run `CREATE SCHEMA` at startup, which the api
+  role has no privilege for and does not need. The migration has to match the structure version Modulith expects;
+  it says so by failing on a missing column, which is how the first attempt was caught.
+- Externalization is configured **in code**, not with `@Externalized`. The annotation would have to sit on the
+  domain event, and the domain layer carries no framework ([ADR 0010](0010-pure-domain-layer.md)). Configuring it
+  also keeps the published message a versioned record in `event-contracts`, so the domain event never becomes a
+  contract (D-041).
+
+What goes on the wire, and how the consumer rebuilds its state from it, is
+[ADR 0019](0019-telling-ingest-which-domains-are-tracked.md).
+
 ## Consequences
 - An event is published if and only if the transaction that produced it commits; failed publications are retried.
 - Consumers must tolerate duplicates.
-- Until Site Management exists, domains are registered in Redis manually (see `docs/deployment.md`).
+- The registry's rows are visible in the database, so a publication that never completed can be found by looking
+  rather than guessed at. An integration test asserts that a registration's row ends up completed.

@@ -71,15 +71,6 @@ Keep Dokploy's *Autodeploy* off: a push would otherwise deploy before CI has bui
 Without the secrets, CI still publishes images and skips the deploy step. Services use
 `pull_policy: always`, so every deploy pulls the current `latest` images.
 
-## Registering a site (until Site Management ships)
-
-Ingest only accepts events for registered domains. Until sites can be created in the dashboard,
-register one from the Dokploy terminal of the `redis` container:
-
-```bash
-redis-cli HSET sites:domains example.com "$(cat /proc/sys/kernel/random/uuid)"
-```
-
 ## GeoIP database
 
 `ingest` resolves country, region and city before discarding the IP address. The GeoLite2 City database is licensed
@@ -90,6 +81,18 @@ and never committed; a `maxmindinc/geoipupdate` sidecar downloads it into the `g
 infra/scripts/download-geoip.sh                     # credentials from .env, writes infra/geoip/
 GEOIP_DATABASE=$PWD/infra/geoip/GeoLite2-City.mmdb mvn -pl services/ingest spring-boot:run
 ```
+
+## Upgrading a database that already exists
+
+`infra/postgres/init/01-roles-and-schemas.sh` only runs when the PostgreSQL volume is created, so a schema added
+to it later has to be created by hand once on an existing database. The `platform` schema, which holds the
+transactional outbox, was added after the first deployment:
+
+```bash
+psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION wholestory_api;'
+```
+
+Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
 ## Base images
 

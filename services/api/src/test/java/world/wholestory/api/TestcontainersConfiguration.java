@@ -5,12 +5,18 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
+    /**
+     * The production role and schema script, plus processor's analytics migrations: api reads the {@code api_*}
+     * views at runtime (D-012) and depends on processor having created them, so its tests need them too. The
+     * files are the real ones, which means a change to that contract shows up here.
+     */
     @Bean
     PostgreSQLContainer postgres() {
         return new PostgreSQLContainer("postgres:18.6-alpine")
@@ -19,7 +25,21 @@ public class TestcontainersConfiguration {
                 .withEnv("PROCESSOR_DB_PASSWORD", "processor")
                 .withCopyFileToContainer(
                         MountableFile.forHostPath("../../infra/postgres/init/01-roles-and-schemas.sh", 0755),
-                        "/docker-entrypoint-initdb.d/01-roles-and-schemas.sh");
+                        "/docker-entrypoint-initdb.d/01-roles-and-schemas.sh")
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath("../processor/src/main/resources/db/migration/V1__analytics.sql"),
+                        "/docker-entrypoint-initdb.d/02-analytics.sql")
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath(
+                                "../processor/src/main/resources/db/migration/V2__bounce_definition.sql"),
+                        "/docker-entrypoint-initdb.d/03-analytics-bounce.sql");
+    }
+
+    /** The outbox externalizes site events to Kafka (ADR 0009). */
+    @Bean
+    @ServiceConnection
+    KafkaContainer kafka() {
+        return new KafkaContainer("apache/kafka:4.3.1");
     }
 
     /** Sessions live in Redis (ADR 0018), so the context needs a real one. */

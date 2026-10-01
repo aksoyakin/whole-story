@@ -15,7 +15,7 @@ export type SignedInUser = {
 };
 
 /** The session cookie as a header for api, or nothing when the visitor has none. */
-async function sessionHeaders(): Promise<Record<string, string>> {
+export async function sessionHeaders(): Promise<Record<string, string>> {
   const session = (await cookies()).get(SESSION_COOKIE);
   return session ? { cookie: `${SESSION_COOKIE}=${session.value}` } : {};
 }

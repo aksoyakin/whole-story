@@ -11,7 +11,7 @@
 | [0006](0006-idempotent-at-least-once-processing.md) | At-least-once delivery with idempotent writes | Accepted |
 | [0007](0007-events-sessions-and-additive-rollups.md) | Events, sessions and additive-only rollups | Accepted |
 | [0008](0008-sessionization-state-in-redis.md) | Session state in Redis | Accepted |
-| [0009](0009-transactional-outbox-with-spring-modulith.md) | Transactional outbox with Spring Modulith | Accepted, not yet implemented |
+| [0009](0009-transactional-outbox-with-spring-modulith.md) | Transactional outbox with Spring Modulith | Accepted |
 | [0010](0010-pure-domain-layer.md) | A pure domain layer and manual mappers | Accepted |
 | [0011](0011-backend-for-frontend.md) | The web app as a backend-for-frontend | Accepted |
 | [0012](0012-build-and-deployment.md) | Build and deployment | Accepted |
@@ -21,3 +21,4 @@
 | [0016](0016-ingest-admission-control.md) | Admission control at ingest | Accepted |
 | [0017](0017-bounce-definition.md) | What counts as a bounce, and where that is defined | Accepted |
 | [0018](0018-authentication-and-sessions.md) | Authentication and sessions | Accepted |
+| [0019](0019-telling-ingest-which-domains-are-tracked.md) | Telling ingest which domains are tracked | Accepted |

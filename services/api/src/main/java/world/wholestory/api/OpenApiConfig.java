@@ -21,17 +21,20 @@ class OpenApiConfig {
     }
 
     /**
-     * Response fields are non-null by convention, so the generated TypeScript types do not force
-     * the client to handle values that can never be missing.
+     * Response fields are non-null by convention, so the generated TypeScript types do not force the client to
+     * handle values that can never be missing.
+     * <p>
+     * Only responses: a request may well have an optional field, and marking those required would make the
+     * client send a value it does not have.
      */
     @Bean
-    OpenApiCustomizer fieldsAreRequiredByDefault() {
+    OpenApiCustomizer responseFieldsAreRequired() {
         return openApi -> {
             if (openApi.getComponents() == null || openApi.getComponents().getSchemas() == null) {
                 return;
             }
-            openApi.getComponents().getSchemas().values().forEach(schema -> {
-                if (schema.getProperties() != null) {
+            openApi.getComponents().getSchemas().forEach((name, schema) -> {
+                if (name.endsWith("Response") && schema.getProperties() != null) {
                     schema.setRequired(new ArrayList<>(schema.getProperties().keySet()));
                 }
             });

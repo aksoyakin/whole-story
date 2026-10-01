@@ -14,6 +14,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE SCHEMA identity  AUTHORIZATION wholestory_api;
 CREATE SCHEMA sites     AUTHORIZATION wholestory_api;
 CREATE SCHEMA analytics AUTHORIZATION wholestory_processor;
+-- Cross-context infrastructure of the api service: the transactional outbox belongs to neither context.
+CREATE SCHEMA platform  AUTHORIZATION wholestory_api;
 
 -- api may only look into analytics; SELECT on the api_* views is granted by processor migrations.
 GRANT USAGE ON SCHEMA analytics TO wholestory_api;

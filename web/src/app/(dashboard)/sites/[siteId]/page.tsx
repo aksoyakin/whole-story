@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api/client";
+import { sessionHeaders } from "@/lib/auth";
 import { PERIOD_LABELS, PERIODS, parsePeriod, toDateRange } from "@/lib/period";
 import { cn } from "@/lib/utils";
 
@@ -20,11 +21,14 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
   const period = parsePeriod((await searchParams).period);
   const range = toDateRange(period);
 
+  // The session travels with the call: api decides whether this person may read this site (ADR 0018).
   const { data, error } = await api.GET("/api/sites/{siteId}/stats/aggregate", {
     params: { path: { siteId }, query: range },
+    headers: await sessionHeaders(),
     cache: "no-store",
   });
-  if (error || !data) throw new Error("Could not load statistics");
+  // A site that is not this organization's answers 404, which is also what an unknown id answers.
+  if (error || !data) notFound();
 
   const metrics = [
     { label: "Unique visitors", value: data.visitors },
