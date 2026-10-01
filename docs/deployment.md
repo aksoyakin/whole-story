@@ -17,7 +17,7 @@ git push main ─► GitHub Actions ─► tests (Maven + Testcontainers, Playwr
 | `https://app.wholestory.world` | `web:3000` | Dashboard |
 | `https://wholestory.world/api/event` | `ingest:8081` | Event collection; longer Traefik rule wins over the web route |
 | — | `api:8080` | Internal only; called by `web` on the Docker network (backend-for-frontend). Holds the user sessions in Redis (ADR 0018) |
-| — | PostgreSQL, Kafka, Redis | Internal only, no published ports |
+| — | PostgreSQL, Kafka, Redis | Internal only, no published ports. All three services talk to Kafka: ingest and api publish, processor and ingest consume |
 
 ## One-time setup
 

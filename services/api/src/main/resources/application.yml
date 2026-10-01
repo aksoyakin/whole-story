@@ -12,6 +12,9 @@ spring:
     create-schemas: false
   modulith:
     events:
+      # The whole point of an outbox: a publication that never reached the broker is sent again rather than
+      # sitting in the table forever. Off by default, which made ADR 0009's promise untrue until it was set.
+      republish-outstanding-events-on-restart: true
       jdbc:
         schema: platform
         schema-initialization:

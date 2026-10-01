@@ -144,9 +144,12 @@ services:
       DATABASE_PASSWORD: ${API_DB_PASSWORD:?required}
       # Sessions live in Redis (ADR 0018).
       REDIS_HOST: redis
+      # api publishes site-events through the outbox (ADR 0009, ADR 0019).
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
       # api reads processor's analytics views, which processor's migrations create.
       processor: { condition: service_healthy }
     healthcheck:

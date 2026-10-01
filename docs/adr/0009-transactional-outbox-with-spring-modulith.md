@@ -17,6 +17,10 @@ Implemented with Site Management. Three details were decided while building it:
 
 - The **JDBC** registry rather than the JPA one, because only the JDBC variant lets the table be placed in a
   schema of its own (`spring.modulith.events.jdbc.schema`), and the outbox is neither bounded context's data.
+- **Resending outstanding publications has to be switched on.** Modulith records a failed publication but does
+  not retry it unless `republish-outstanding-events-on-restart` is set, so the guarantee below was not true until
+  it was. It was found the way such things are: a site registered while api could not reach the broker, and the
+  announcement simply never went out.
 - Modulith's own schema initialisation is **switched off** and the table is created by a Flyway migration like
   every other table here. Naming a schema otherwise makes Modulith run `CREATE SCHEMA` at startup, which the api
   role has no privilege for and does not need. The migration has to match the structure version Modulith expects;
@@ -30,7 +34,8 @@ What goes on the wire, and how the consumer rebuilds its state from it, is
 [ADR 0019](0019-telling-ingest-which-domains-are-tracked.md).
 
 ## Consequences
-- An event is published if and only if the transaction that produced it commits; failed publications are retried.
+- An event is published if and only if the transaction that produced it commits; a publication that failed is
+  retried when the service next starts.
 - Consumers must tolerate duplicates.
 - The registry's rows are visible in the database, so a publication that never completed can be found by looking
   rather than guessed at. An integration test asserts that a registration's row ends up completed.
