@@ -60,7 +60,7 @@ class EventProcessingIntegrationTest {
         Map<String, Object> session = jdbc.sql("""
                         select count(*) over () as sessions, pageviews, events, entry_page, exit_page, is_bounce,
                                duration_seconds, browser, os, device_type
-                        from analytics.sessions where site_id = ?""")
+                        from analytics.api_sessions where site_id = ?""")
                 .param(siteId).query().singleRow();
         assertThat(session)
                 .containsEntry("sessions", 1L)
@@ -97,6 +97,26 @@ class EventProcessingIntegrationTest {
 
         assertThat(count("select count(*) from analytics.sessions where site_id = ?", siteId)).isEqualTo(1);
         assertThat(count("select sum(pageviews) from analytics.sessions where site_id = ?", siteId)).isEqualTo(2);
+    }
+
+    @Test
+    void aSessionBouncesOnlyWhenTheVisitorDidNothingMeaningful() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        send(List.of(
+                event(siteId, "pageview", "/", now, CHROME_MAC, 10L),
+                event(siteId, "pageview", "/", now, CHROME_MAC, 11L),
+                event(siteId, "Signup", "/", now.plusSeconds(10), CHROME_MAC, 11L),
+                // A visit can start with a custom event: the tracker flushes queued calls before the pageview.
+                event(siteId, "Signup", "/", now, CHROME_MAC, 12L)));
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(4));
+
+        assertThat(bounced(siteId, 10L)).as("a single pageview and nothing else").isTrue();
+        assertThat(bounced(siteId, 11L)).as("one pageview plus a custom event").isFalse();
+        assertThat(bounced(siteId, 12L)).as("a custom event without a pageview").isFalse();
     }
 
     @Test
@@ -151,6 +171,14 @@ class EventProcessingIntegrationTest {
 
     private long count(String sql, UUID siteId) {
         return jdbc.sql(sql).param(siteId).query(Long.class).single();
+    }
+
+    /** Read through the contract view, which is where the bounce definition lives (ADR 0017). */
+    private boolean bounced(UUID siteId, long visitorHash) {
+        return jdbc.sql("select is_bounce from analytics.api_sessions where site_id = ? and visitor_hash = ?")
+                .params(siteId, visitorHash)
+                .query(Boolean.class)
+                .single();
     }
 
     private void send(List<RawEventV1> events) {

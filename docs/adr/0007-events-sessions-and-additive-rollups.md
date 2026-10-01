@@ -23,6 +23,10 @@ Summing them would silently produce wrong numbers.
 Tables, partition creation and rollups are implemented. Dropping expired partitions and alerting on missing
 partitions are planned.
 
+The bounce flag is no longer stored on the session row: its definition moved into the `api_sessions` view, so that
+redefining it does not rewrite partitions and applies to history as well. See
+[ADR 0017](0017-bounce-definition.md).
+
 ## Consequences
 - Numbers are exact. If load tests show the exact distinct counts are too slow, HyperLogLog sketches are the
   planned next step, adopted on evidence rather than up front.

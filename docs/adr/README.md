@@ -19,3 +19,4 @@
 | [0014](0014-user-agent-parsing-and-bot-filtering.md) | User-Agent parsing and bot filtering | Accepted |
 | [0015](0015-referrer-source-classification.md) | Referrer source classification | Accepted |
 | [0016](0016-ingest-admission-control.md) | Admission control at ingest | Accepted |
+| [0017](0017-bounce-definition.md) | What counts as a bounce, and where that is defined | Accepted |
