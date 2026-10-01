@@ -144,6 +144,36 @@ class StatsIntegrationTest {
                 .andExpect(jsonPath("$[1].visitors").value(0));
     }
 
+    /**
+     * Every zone used above is offset by a whole number of hours, which hides a whole class of mistake: in
+     * {@code Asia/Kolkata} (+05:30) the local day starts at 18:30Z, so the hour buckets sit at half past. Binning
+     * the rows to whole hours instead matched no bucket at all and the entire day came back as zeroes.
+     */
+    @Test
+    void hourBucketsLineUpInAZoneOffsetByHalfAnHour() throws Exception {
+        Site site = registerSite("Asia/Kolkata");
+        // 2026-10-01 in Kolkata runs from 2026-09-30T18:30Z to 2026-10-01T18:30Z: the first bucket is 18:30.
+        UUID visit = UUID.randomUUID();
+        session(site.id(), 130L, "2026-09-30T19:00:00Z", "2026-09-30T19:00:00Z", 1, 1, "/", "/", visit);
+        event(site.id(), visit, 130L, "2026-09-30T19:00:00Z", "pageview", "/");
+        pageviews(site.id(), "2026-09-30T19:00:00Z", "/", 2);
+
+        mvc.perform(stats(site, "timeseries"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(24))
+                .andExpect(jsonPath("$[0].bucket").value("2026-09-30T18:30:00Z"))
+                .andExpect(jsonPath("$[0].visitors").value(1))
+                .andExpect(jsonPath("$[0].pageviews").value(2))
+                .andExpect(jsonPath("$[1].visitors").value(0));
+
+        // A filter moves the pageviews to the events (D-103), which have to be binned onto the same grid.
+        mvc.perform(filtered(site, "timeseries", "PAGE:/"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(24))
+                .andExpect(jsonPath("$[0].visitors").value(1))
+                .andExpect(jsonPath("$[0].pageviews").value(1));
+    }
+
     @Test
     void sessionDimensionsAreBrokenDownInOnePass() throws Exception {
         Site site = registerSite();
@@ -426,6 +456,10 @@ class StatsIntegrationTest {
     }
 
     private Site registerSite() throws Exception {
+        return registerSite(ZONE);
+    }
+
+    private Site registerSite(String zone) throws Exception {
         String email = "owner-" + UUID.randomUUID() + "@example.com";
         MvcResult account = mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -444,7 +478,7 @@ class StatsIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"organizationId": "%s", "domain": "%s", "timezone": "%s"}"""
-                                .formatted(organizationId, domain, ZONE)))
+                                .formatted(organizationId, domain, zone)))
                 .andExpect(status().isCreated())
                 .andReturn();
         UUID siteId = UUID.fromString(jsonMapper.readTree(created.getResponse().getContentAsString())

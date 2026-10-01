@@ -83,11 +83,17 @@ class JdbcStatsQueries implements StatsQueries {
             order by b.bucket
             """;
 
-    /** Hour buckets need no timezone: an hour is an hour everywhere, and the client labels them. */
+    /**
+     * An hour is an hour everywhere, so hour buckets need no timezone conversion — but they do need to be
+     * anchored where the range begins. The site's day starts at its own local midnight, which in a zone whose
+     * offset is not a whole number of hours is a moment like 18:30Z, so the buckets sit at half past. Truncating
+     * the data to whole hours instead would match none of them and the whole series would come back as zeroes.
+     * {@code date_bin} puts every moment of the range into exactly one of these buckets, the boundaries included.
+     */
     private static final String TIMESERIES_BY_HOUR = """
             with buckets as (select generate_series(:start, :end - interval '1 hour', interval '1 hour') as bucket_at),
-                 visitors as (select date_trunc('hour', s.started_at) as bucket_at,
-                                     count(distinct s.visitor_hash)   as visitors
+                 visitors as (select date_bin(interval '1 hour', s.started_at, :start) as bucket_at,
+                                     count(distinct s.visitor_hash)                    as visitors
                               %s
                               group by 1),
                  views as (%s)
@@ -110,15 +116,20 @@ class JdbcStatsQueries implements StatsQueries {
             %s
             group by 1
             """;
+    /**
+     * The rollup's own grain is the whole UTC hour, so in a zone offset by half an hour its rows do not line up
+     * with the buckets and each one is binned into the bucket it starts in. That is the rounding this rollup
+     * carries by design (ADR 0020); the summary's pageview count drops the same partial hour, so the two agree.
+     */
     private static final String HOURLY_VIEWS_FROM_ROLLUP = """
-            select hour as bucket_at, sum(pageviews) as pageviews
+            select date_bin(interval '1 hour', hour, :start) as bucket_at, sum(pageviews) as pageviews
             from analytics.api_page_hourly
             where site_id = :siteId and hour >= :start and hour < :end
             group by 1
             """;
     private static final String HOURLY_VIEWS_FROM_EVENTS = """
-            select date_trunc('hour', e.timestamp)              as bucket_at,
-                   count(*) filter (where e.name = 'pageview')  as pageviews
+            select date_bin(interval '1 hour', e.timestamp, :start) as bucket_at,
+                   count(*) filter (where e.name = 'pageview')      as pageviews
             %s
             group by 1
             """;
