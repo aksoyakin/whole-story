@@ -133,10 +133,64 @@
         }
       }
     },
-    "/api/sites/{siteId}/stats/aggregate" : {
+    "/api/sites/{siteId}/stats/timeseries" : {
       "get" : {
         "tags" : [ "stats-controller" ],
-        "operationId" : "aggregate",
+        "operationId" : "timeseries",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "from",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "to",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "interval",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "HOUR", "DAY" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/TimeseriesPointResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sites/{siteId}/stats/summary" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "summary",
         "parameters" : [ {
           "name" : "siteId",
           "in" : "path",
@@ -168,7 +222,70 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/AggregateStatsResponse"
+                  "$ref" : "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sites/{siteId}/stats/breakdown" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "breakdown",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "dimension",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "PAGE", "ENTRY_PAGE", "EXIT_PAGE", "SOURCE", "COUNTRY", "REGION", "CITY", "BROWSER", "OS", "DEVICE", "UTM_SOURCE", "UTM_MEDIUM", "UTM_CAMPAIGN", "UTM_CONTENT", "UTM_TERM" ]
+          }
+        }, {
+          "name" : "from",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "to",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 10
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/BreakdownEntryResponse"
+                  }
                 }
               }
             }
@@ -319,7 +436,25 @@
         },
         "required" : [ "email", "password" ]
       },
-      "AggregateStatsResponse" : {
+      "TimeseriesPointResponse" : {
+        "type" : "object",
+        "properties" : {
+          "bucket" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "visitors" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pageviews" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "bucket", "pageviews", "visitors" ]
+      },
+      "SummaryResponse" : {
         "type" : "object",
         "properties" : {
           "visitors" : {
@@ -333,9 +468,41 @@
           "pageviews" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "bounceRate" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "averageVisitDuration" : {
+            "type" : "number",
+            "format" : "double"
           }
         },
-        "required" : [ "pageviews", "visitors", "visits" ]
+        "required" : [ "averageVisitDuration", "bounceRate", "pageviews", "visitors", "visits" ]
+      },
+      "BreakdownEntryResponse" : {
+        "type" : "object",
+        "properties" : {
+          "key" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "visitors" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "visits" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pageviews" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "key", "label", "pageviews", "visitors", "visits" ]
       }
     }
   }

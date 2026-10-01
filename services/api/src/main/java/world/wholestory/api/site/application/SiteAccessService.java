@@ -5,10 +5,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import world.wholestory.api.identity.OrganizationAccess;
 import world.wholestory.api.shared.domain.UserId;
+import world.wholestory.api.site.ReadableSite;
 import world.wholestory.api.site.SiteAccess;
 import world.wholestory.api.site.domain.Site;
 import world.wholestory.api.site.domain.SiteId;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /** Answers the one question Analytics asks of this context. */
@@ -21,11 +23,14 @@ class SiteAccessService implements SiteAccess {
 
     @Override
     @Transactional(readOnly = true)
-    public boolean canRead(UUID siteId, UUID userId) {
+    public Optional<ReadableSite> readableBy(UUID siteId, UUID userId) {
         return sites.findById(SiteId.of(siteId))
                 .filter(site -> !site.isRemoved())
-                .map(Site::getOrganizationId)
-                .filter(organization -> organizations.isMember(organization, UserId.of(userId)))
-                .isPresent();
+                .filter(site -> organizations.isMember(site.getOrganizationId(), UserId.of(userId)))
+                .map(SiteAccessService::toReadable);
+    }
+
+    private static ReadableSite toReadable(Site site) {
+        return new ReadableSite(site.getId().value(), site.getDomain().value(), site.getTimezone().value());
     }
 }

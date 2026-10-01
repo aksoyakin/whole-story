@@ -219,7 +219,7 @@ class SiteManagementIntegrationTest {
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder statsRequest(UUID siteId) {
-        return get("/api/sites/{siteId}/stats/aggregate", siteId)
+        return get("/api/sites/{siteId}/stats/summary", siteId)
                 .param("from", "2026-10-01")
                 .param("to", "2026-10-01");
     }

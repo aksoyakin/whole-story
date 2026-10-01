@@ -6,13 +6,21 @@ import { TrackingSnippet } from "@/components/sites/tracking-snippet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
+import { toDateRange } from "@/lib/period";
 import { sitesOf, TRACKER_SRC } from "@/lib/sites";
+import { summary } from "@/lib/stats";
 
 export const metadata: Metadata = { title: "Sites · Whole Story" };
+
+const numbers = new Intl.NumberFormat("en-US");
 
 export default async function SitesPage() {
   const user = await requireUser();
   const sites = await sitesOf(user.organizationId);
+  // Each site's own week, because each site decides where its day starts (D-020).
+  const visitors = await Promise.all(
+    sites.map((site) => summary(site.siteId, toDateRange("7d", site.timezone)).then((stats) => stats.visitors)),
+  );
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
@@ -35,7 +43,7 @@ export default async function SitesPage() {
       </Card>
 
       <section className="flex flex-col gap-4">
-        {sites.map((site) => (
+        {sites.map((site, index) => (
           <Card key={site.siteId}>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
               <CardTitle className="font-medium text-base">
@@ -43,7 +51,10 @@ export default async function SitesPage() {
                   {site.domain}
                 </Link>
               </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-muted-foreground text-sm tabular-nums">
+                  {numbers.format(visitors[index])} visitors · 7 days
+                </span>
                 <span className="text-muted-foreground text-xs">{site.timezone}</span>
                 <form action={removeSite}>
                   <input type="hidden" name="siteId" value={site.siteId} />

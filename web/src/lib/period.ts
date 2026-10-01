@@ -7,19 +7,36 @@ export const PERIOD_LABELS: Record<Period, string> = {
   "30d": "Last 30 days",
 };
 
-const DEFAULT_PERIOD: Period = "30d";
+const DEFAULT_PERIOD: Period = "7d";
 
 export function parsePeriod(value: string | string[] | undefined): Period {
   return PERIODS.find((period) => period === value) ?? DEFAULT_PERIOD;
 }
 
-/** Inclusive ISO date range ending today. M1 uses UTC; the site timezone arrives with Site Management. */
-export function toDateRange(period: Period, now: Date = new Date()): { from: string; to: string } {
+/**
+ * The inclusive range of local days the period covers, in the site's own timezone: "today" is today where the
+ * site is, not where the person looking at it happens to be (D-020).
+ */
+export function toDateRange(period: Period, timezone: string, now: Date = new Date()): { from: string; to: string } {
+  const today = localDate(now, timezone);
   const days = period === "today" ? 0 : Number.parseInt(period, 10) - 1;
-  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days));
-  return { from: isoDate(from), to: isoDate(now) };
+  return { from: shiftDays(today, -days), to: today };
 }
 
-function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+/** The calendar date at `instant` in `timezone`, as YYYY-MM-DD. */
+function localDate(instant: Date, timezone: string): string {
+  // "en-CA" renders ISO-like dates, which is what the API expects.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+function shiftDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  // Shifted as a plain calendar date in UTC, so no zone rule can move it by an hour.
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
 }
