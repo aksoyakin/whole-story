@@ -6,9 +6,9 @@ import java.util.UUID;
 /** Read-side port over processor's analytics views. SQL-first: no aggregates, no ORM (D-042). */
 public interface StatsQueries {
 
-    SummaryStats summary(UUID siteId, DateRange range);
+    SummaryStats summary(UUID siteId, DateRange range, List<Filter> filters);
 
-    List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval);
+    List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, List<Filter> filters);
 
-    List<BreakdownEntry> breakdown(UUID siteId, DateRange range, Dimension dimension, int limit);
+    List<BreakdownEntry> breakdown(UUID siteId, DateRange range, Dimension dimension, int limit, List<Filter> filters);
 }

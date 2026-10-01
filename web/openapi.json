@@ -169,6 +169,16 @@
             "type" : "string",
             "enum" : [ "HOUR", "DAY" ]
           }
+        }, {
+          "name" : "filter",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
         } ],
         "responses" : {
           "200" : {
@@ -214,6 +224,16 @@
           "schema" : {
             "type" : "string",
             "format" : "date"
+          }
+        }, {
+          "name" : "filter",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
           }
         } ],
         "responses" : {
@@ -274,6 +294,16 @@
             "type" : "integer",
             "format" : "int32",
             "default" : 10
+          }
+        }, {
+          "name" : "filter",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
           }
         } ],
         "responses" : {

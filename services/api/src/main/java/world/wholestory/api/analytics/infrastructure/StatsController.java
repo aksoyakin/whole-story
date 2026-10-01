@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
+import world.wholestory.api.analytics.application.Filter;
 import world.wholestory.api.analytics.application.Interval;
 import world.wholestory.api.analytics.application.SiteNotVisibleException;
 import world.wholestory.api.analytics.application.StatsQueries;
@@ -34,6 +35,8 @@ class StatsController {
 
     /** Enough for any list a dashboard shows, and a ceiling on what one request can ask the database for. */
     private static final int MAX_BREAKDOWN_SIZE = 100;
+    /** More than one filter per dimension is already unusual; this only stops an absurd request. */
+    private static final int MAX_FILTERS = 10;
 
     private final StatsQueries stats;
     private final SiteAccess sites;
@@ -42,8 +45,10 @@ class StatsController {
     SummaryResponse summary(@PathVariable UUID siteId,
                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                            @RequestParam(name = "filter", required = false) List<String> filter,
                             @AuthenticationPrincipal AuthenticatedUser principal) {
-        return StatsResponseMapper.toResponse(stats.summary(siteId, rangeFor(siteId, principal, from, to)));
+        return StatsResponseMapper.toResponse(
+                stats.summary(siteId, rangeFor(siteId, principal, from, to), parse(filter)));
     }
 
     /** Buckets are hourly for a single day and daily for anything longer, unless the caller says otherwise. */
@@ -52,10 +57,13 @@ class StatsController {
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                              @RequestParam(required = false) Interval interval,
+                                             @RequestParam(name = "filter", required = false) List<String> filter,
                                              @AuthenticationPrincipal AuthenticatedUser principal) {
         DateRange range = rangeFor(siteId, principal, from, to);
         Interval buckets = interval == null ? range.naturalInterval() : interval;
-        return stats.timeseries(siteId, range, buckets).stream().map(StatsResponseMapper::toResponse).toList();
+        return stats.timeseries(siteId, range, buckets, parse(filter)).stream()
+                .map(StatsResponseMapper::toResponse)
+                .toList();
     }
 
     @GetMapping("/breakdown")
@@ -64,12 +72,39 @@ class StatsController {
                                            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                            @RequestParam(defaultValue = "10") int limit,
+                                           @RequestParam(name = "filter", required = false) List<String> filter,
                                            @AuthenticationPrincipal AuthenticatedUser principal) {
         DateRange range = rangeFor(siteId, principal, from, to);
         int size = Math.clamp(limit, 1, MAX_BREAKDOWN_SIZE);
-        return stats.breakdown(siteId, range, dimension, size).stream()
+        return stats.breakdown(siteId, range, dimension, size, parse(filter)).stream()
                 .map(StatsResponseMapper::toResponse)
                 .toList();
+    }
+
+    /**
+     * Reads the repeated {@code filter=DIMENSION:value} parameter. The dimension is the same enum a breakdown
+     * groups by, so a row the dashboard showed can be clicked straight into a filter, and the value is split off
+     * at the first colon because a path contains colons of its own.
+     * <p>
+     * An empty value is meaningful: it is the row a breakdown returns for visits where the dimension is unknown.
+     */
+    private static List<Filter> parse(List<String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return List.of();
+        }
+        if (filters.size() > MAX_FILTERS) {
+            throw new IllegalArgumentException("too many filters");
+        }
+        return filters.stream().map(StatsController::parseOne).toList();
+    }
+
+    private static Filter parseOne(String filter) {
+        int separator = filter.indexOf(':');
+        if (separator < 1) {
+            throw new IllegalArgumentException("a filter looks like DIMENSION:value");
+        }
+        Dimension dimension = Dimension.valueOf(filter.substring(0, separator));
+        return new Filter(dimension, filter.substring(separator + 1));
     }
 
     /** Authorization and the site's timezone in one answer; a site nobody may read answers like a missing one. */

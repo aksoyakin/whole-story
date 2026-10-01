@@ -34,9 +34,33 @@ they are counted from sessions. That split decides the source of every number he
 - Every row of a ranked list carries its own number, so the bar beside it is a comparison aid rather than the only
   way to read the value.
 
+## Filters
+
+Clicking a row narrows every number on the page. The schema was built for it: the geo and device fields are
+denormalised onto events as well as sessions, so most filters are a plain `where` on whichever table a query
+already reads, and the bounce rate and the duration stay exact.
+
+- Filters travel as a repeated `filter=DIMENSION:value` parameter, reusing the dimension enum a breakdown already
+  groups by, so a row that was shown can be clicked straight into a filter. The value is split off at the first
+  colon, because a path contains colons of its own. An empty value is meaningful: it is the row a breakdown shows
+  for visits where the dimension is unknown.
+- One filter per dimension. Clicking a second country replaces the first rather than asking for both at once.
+- **A filter sends the pageview count to the events.** The rollup holds no dimension beyond the page, so it can
+  only answer when nothing is filtered. That is the price of this feature, and it is paid only when a filter is
+  present.
+- **Two dimensions cross the line between the tables, and those need a semi-join.** A page exists only on events,
+  so filtering by one reaches the visits through their events; an entry or exit page exists only on sessions, so
+  filtering by one reaches the events through their sessions. Everything else is a column on both.
+- Every comparison is written as `coalesce(column::text, '') = :fN`. One shape covers a plain value, a numeric key
+  like a city's geoname id, and the empty key. It cannot use an index, which costs nothing: these narrow a range
+  already selected by `(site_id, time)`.
+- A filtered dimension's own panel still shows, now with one row. Hiding it would make the page disagree with
+  itself about what it is showing.
+
 ## Consequences
 - The top pages report reads `events`, which is the heaviest query the dashboard makes and the one that will not
-  benefit from the rollup. Ranking pages by pageviews alone would have been cheap; showing visitors per page is
+  benefit from the rollup. A page filter is heavier still, since it adds the semi-join on top; both belong in the
+  load tests rather than in an argument about taste. Ranking pages by pageviews alone would have been cheap; showing visitors per page is
   worth more to the reader. Whether it stays that way is a question for the load tests, not for taste.
 - A rollup is hourly, so in a zone whose offset is not a whole number of hours — `Asia/Kolkata` at +05:30, for
   instance — a local day boundary falls inside an hour, and the pageview series rounds it to the nearest one.

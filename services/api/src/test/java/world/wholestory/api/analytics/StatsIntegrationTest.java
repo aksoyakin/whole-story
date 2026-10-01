@@ -215,6 +215,122 @@ class StatsIntegrationTest {
         mvc.perform(breakdown(site, "PAGE", other.session())).andExpect(status().isNotFound());
     }
 
+    @Test
+    void aFilterNarrowsEveryNumberOnThePage() throws Exception {
+        Site site = registerSite();
+        sessionWith(site.id(), 70L, "2026-10-01T09:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 71L, "2026-10-01T10:00:00Z", "DE", "DE-BE", "Berlin", 2950159, "Firefox", "mobile", "Google");
+
+        mvc.perform(filtered(site, "summary", "COUNTRY:TR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.visitors").value(1))
+                .andExpect(jsonPath("$.visits").value(1));
+
+        // The filtered dimension's own panel narrows too, which is what keeps the page consistent with itself.
+        mvc.perform(filtered(site, "breakdown", "COUNTRY:TR").param("dimension", "COUNTRY"))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].key").value("TR"));
+
+        mvc.perform(filtered(site, "breakdown", "COUNTRY:TR").param("dimension", "BROWSER"))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].key").value("Chrome"));
+    }
+
+    @Test
+    void filtersStackAndNarrowTogether() throws Exception {
+        Site site = registerSite();
+        sessionWith(site.id(), 80L, "2026-10-01T09:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 81L, "2026-10-01T10:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Firefox", "mobile", "Google");
+
+        mvc.perform(filtered(site, "summary", "COUNTRY:TR").param("filter", "BROWSER:Firefox"))
+                .andExpect(jsonPath("$.visitors").value(1));
+    }
+
+    /** The empty key a breakdown shows as "Unknown" is a row like any other, so it has to be filterable. */
+    @Test
+    void theUnknownRowCanBeFilteredOn() throws Exception {
+        Site site = registerSite();
+        sessionWith(site.id(), 90L, "2026-10-01T09:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 91L, "2026-10-01T10:00:00Z", null, null, null, 0, "Chrome", "desktop", null);
+
+        mvc.perform(filtered(site, "summary", "COUNTRY:"))
+                .andExpect(jsonPath("$.visitors").value(1));
+    }
+
+    /**
+     * A page is not on the session, so filtering by one has to reach the visits through their events — and the
+     * numbers that only a session knows, the bounce rate and the duration, have to survive that.
+     */
+    @Test
+    void filteringByAPageReachesTheVisitsThroughTheirEvents() throws Exception {
+        Site site = registerSite();
+        UUID sawPricing = UUID.randomUUID();
+        UUID landedOnly = UUID.randomUUID();
+        session(site.id(), 100L, "2026-10-01T09:00:00Z", "2026-10-01T09:04:00Z", 2, 2, "/", "/pricing", sawPricing);
+        session(site.id(), 101L, "2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z", 1, 1, "/", "/", landedOnly);
+        event(site.id(), sawPricing, 100L, "2026-10-01T09:00:00Z", "pageview", "/");
+        event(site.id(), sawPricing, 100L, "2026-10-01T09:04:00Z", "pageview", "/pricing");
+        event(site.id(), landedOnly, 101L, "2026-10-01T10:00:00Z", "pageview", "/");
+
+        mvc.perform(filtered(site, "summary", "PAGE:/pricing"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.visitors").value(1))
+                .andExpect(jsonPath("$.visits").value(1))
+                .andExpect(jsonPath("$.pageviews").value(1))
+                // The visit that saw /pricing was not a bounce and lasted four minutes; both come from its session.
+                .andExpect(jsonPath("$.bounceRate").value(0.0))
+                .andExpect(jsonPath("$.averageVisitDuration").value(240.0));
+    }
+
+    /** The mirror of the case above: an entry page is not on the event, so the events are reached through theirs. */
+    @Test
+    void filteringByAnEntryPageReachesTheEventsThroughTheirSessions() throws Exception {
+        Site site = registerSite();
+        UUID enteredAtDocs = UUID.randomUUID();
+        UUID enteredAtHome = UUID.randomUUID();
+        session(site.id(), 110L, "2026-10-01T09:00:00Z", "2026-10-01T09:02:00Z", 2, 2, "/docs", "/pricing", enteredAtDocs);
+        session(site.id(), 111L, "2026-10-01T10:00:00Z", "2026-10-01T10:02:00Z", 2, 2, "/", "/pricing", enteredAtHome);
+        event(site.id(), enteredAtDocs, 110L, "2026-10-01T09:00:00Z", "pageview", "/docs");
+        event(site.id(), enteredAtDocs, 110L, "2026-10-01T09:02:00Z", "pageview", "/pricing");
+        event(site.id(), enteredAtHome, 111L, "2026-10-01T10:00:00Z", "pageview", "/");
+        event(site.id(), enteredAtHome, 111L, "2026-10-01T10:02:00Z", "pageview", "/pricing");
+
+        mvc.perform(filtered(site, "breakdown", "ENTRY_PAGE:/docs").param("dimension", "PAGE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.key == '/docs')].pageviews").value(1))
+                .andExpect(jsonPath("$[?(@.key == '/pricing')].pageviews").value(1));
+    }
+
+    /**
+     * The rollup holds no dimension beyond the page, so a filtered pageview count cannot come from it. The seed
+     * deliberately disagrees with the events, which is what makes the source of each number visible.
+     */
+    @Test
+    void filteredPageviewsAreCountedFromTheEventsRatherThanTheRollup() throws Exception {
+        Site site = registerSite();
+        UUID visit = UUID.randomUUID();
+        session(site.id(), 120L, "2026-10-01T09:00:00Z", "2026-10-01T09:00:00Z", 1, 1, "/", "/", visit);
+        sessionWith(site.id(), 121L, "2026-10-01T09:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "desktop", "Google");
+        event(site.id(), visit, 120L, "2026-10-01T09:00:00Z", "pageview", "/");
+        // A number no event could produce, so an answer of 999 can only have come from the rollup.
+        pageviews(site.id(), "2026-10-01T09:00:00Z", "/", 999);
+
+        mvc.perform(stats(site, "summary"))
+                .andExpect(jsonPath("$.pageviews").value(999));
+
+        mvc.perform(filtered(site, "summary", "BROWSER:Chrome"))
+                .andExpect(jsonPath("$.pageviews").value(0));
+    }
+
+    @Test
+    void aFilterThatIsNotUnderstoodIsRefused() throws Exception {
+        Site site = registerSite();
+
+        mvc.perform(filtered(site, "summary", "NONSENSE:x")).andExpect(status().isBadRequest());
+        mvc.perform(filtered(site, "summary", "no-colon")).andExpect(status().isBadRequest());
+    }
+
     // --- fixtures -------------------------------------------------------------------------------------------
 
     private void ensurePartitions() {
@@ -278,6 +394,14 @@ class StatsIntegrationTest {
      * reusing a half-built request and overriding a value sends both — which is how one of these tests passed
      * for the wrong reason until it was caught.
      */
+    private MockHttpServletRequestBuilder filtered(Site site, String report, String filter) {
+        return get("/api/sites/{siteId}/stats/{report}", site.id(), report)
+                .param("from", THE_DAY)
+                .param("to", THE_DAY)
+                .param("filter", filter)
+                .cookie(site.session());
+    }
+
     private MockHttpServletRequestBuilder stats(Site site, String report) {
         return stats(site, report, THE_DAY, THE_DAY, site.session());
     }
