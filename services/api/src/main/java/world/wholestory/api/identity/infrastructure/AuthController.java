@@ -21,11 +21,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import world.wholestory.api.shared.security.AuthenticatedUser;
 import world.wholestory.api.identity.application.FindUserProfile;
 import world.wholestory.api.identity.application.RegisterUser;
 import world.wholestory.api.identity.application.RegisterUserCommand;
 import world.wholestory.api.identity.application.RegisteredUser;
-import world.wholestory.api.identity.domain.UserId;
+import world.wholestory.api.shared.domain.UserId;
 
 /**
  * Sign-up and sign-in. Only the Next server calls these; the browser never reaches api directly

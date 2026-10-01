@@ -5,7 +5,7 @@ import world.wholestory.api.identity.domain.EmailAddress;
 import world.wholestory.api.identity.domain.PasswordHash;
 import world.wholestory.api.identity.domain.PersonName;
 import world.wholestory.api.identity.domain.User;
-import world.wholestory.api.identity.domain.UserId;
+import world.wholestory.api.shared.domain.UserId;
 
 import java.time.Instant;
 import java.util.UUID;

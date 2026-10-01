@@ -4,7 +4,7 @@ import world.wholestory.api.identity.domain.EmailAddress;
 import world.wholestory.api.identity.domain.PasswordHash;
 import world.wholestory.api.identity.domain.PersonName;
 import world.wholestory.api.identity.domain.User;
-import world.wholestory.api.identity.domain.UserId;
+import world.wholestory.api.shared.domain.UserId;
 
 /** Hand-written on purpose: no mapping library in this project, and the two shapes may drift apart. */
 final class UserJpaMapper {

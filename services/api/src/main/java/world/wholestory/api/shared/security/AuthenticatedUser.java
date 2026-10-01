@@ -1,4 +1,4 @@
-package world.wholestory.api.identity.infrastructure;
+package world.wholestory.api.shared.security;
 
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -12,10 +12,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The principal stored in the session. It carries identifiers and nothing else: the session is serialised into
- * Redis, so a domain object here would tie the stored format to the model's shape.
+ * The principal stored in the session: who is making this request. It lives in the shared kernel because every
+ * module's web adapter needs it — being signed in is a property of the api, not of Identity &amp; Access.
  * <p>
- * Credentials are erased by Spring Security after authentication, so the hash does not reach Redis.
+ * It carries identifiers and nothing else: the session is serialised into Redis, so a domain object here would
+ * tie the stored format to the model's shape. Credentials are erased by Spring Security after authentication,
+ * so the hash never reaches Redis.
  */
 @Getter
 @EqualsAndHashCode(of = "userId")
@@ -27,7 +29,7 @@ public final class AuthenticatedUser implements UserDetails, Serializable {
     private final String username;
     private final String password;
 
-    AuthenticatedUser(UUID userId, String username, String password) {
+    public AuthenticatedUser(UUID userId, String username, String password) {
         this.userId = userId;
         this.username = username;
         this.password = password;

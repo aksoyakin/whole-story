@@ -6,6 +6,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import world.wholestory.api.shared.security.AuthenticatedUser;
 import world.wholestory.api.identity.application.UserRepository;
 import world.wholestory.api.identity.domain.EmailAddress;
 import world.wholestory.api.identity.domain.InvalidEmailAddressException;

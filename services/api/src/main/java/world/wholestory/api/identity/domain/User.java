@@ -1,5 +1,7 @@
 package world.wholestory.api.identity.domain;
 
+import world.wholestory.api.shared.domain.UserId;
+
 import lombok.AccessLevel;
 import lombok.Getter;
 

@@ -2,9 +2,9 @@ package world.wholestory.api.identity.infrastructure;
 
 import world.wholestory.api.identity.domain.Membership;
 import world.wholestory.api.identity.domain.Organization;
-import world.wholestory.api.identity.domain.OrganizationId;
+import world.wholestory.api.shared.domain.OrganizationId;
 import world.wholestory.api.identity.domain.PersonName;
-import world.wholestory.api.identity.domain.UserId;
+import world.wholestory.api.shared.domain.UserId;
 
 import java.util.List;
 

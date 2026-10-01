@@ -1,4 +1,4 @@
-package world.wholestory.api.identity.domain;
+package world.wholestory.api.shared.domain;
 
 import java.util.Objects;
 import java.util.UUID;

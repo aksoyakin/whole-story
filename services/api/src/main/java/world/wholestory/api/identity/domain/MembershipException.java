@@ -1,6 +1,7 @@
 package world.wholestory.api.identity.domain;
 
 import world.wholestory.api.shared.domain.DomainException;
+import world.wholestory.api.shared.domain.UserId;
 
 /** Membership rules of an organization: who may join, leave or change role. */
 public class MembershipException extends DomainException {

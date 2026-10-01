@@ -4,8 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 import world.wholestory.api.identity.application.OrganizationRepository;
 import world.wholestory.api.identity.domain.Organization;
-import world.wholestory.api.identity.domain.OrganizationId;
-import world.wholestory.api.identity.domain.UserId;
+import world.wholestory.api.shared.domain.OrganizationId;
+import world.wholestory.api.shared.domain.UserId;
 
 import java.util.List;
 import java.util.Optional;
