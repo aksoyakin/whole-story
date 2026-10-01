@@ -57,6 +57,23 @@ already reads, and the bounce rate and the duration stay exact.
 - A filtered dimension's own panel still shows, now with one row. Hiding it would make the page disagree with
   itself about what it is showing.
 
+## The map
+
+Countries are also drawn as a choropleth, which is a sequential encoding: one hue, light to dark. The neutral ramp
+is sound used that way — it is only as a *categorical* palette that it fails, because lightness alone cannot tell
+two series apart. The lightest step is left out of the scale: it does not reach three to one against the page, and
+a country has to be readable as filled or not.
+
+- The projection is equal-area. On a Mercator map the far north is drawn several times its true size, which for an
+  encoding that uses area to carry magnitude would make the picture lie.
+- The borders are keyed by **numeric** ISO 3166-1 codes while everything collected here is alpha-2, so a generated
+  table maps between them. It is produced by a script from packages rather than typed out, and committed with the
+  borders themselves: static reference data, identical in development and production, with no build step between.
+- Three territories in the file have no ISO code — Northern Cyprus, Somaliland, Kosovo — and are drawn as having
+  no visitors, which is all this product can say about them.
+- The ranked list of countries sits beside the map with the same numbers, so the map is the picture rather than
+  the only way to read them. That matters here because the map, like the chart, is drawn by the browser.
+
 ## Consequences
 - The top pages report reads `events`, which is the heaviest query the dashboard makes and the one that will not
   benefit from the rollup. A page filter is heavier still, since it adds the semi-join on top; both belong in the

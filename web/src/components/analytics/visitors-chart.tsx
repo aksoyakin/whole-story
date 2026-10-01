@@ -78,8 +78,16 @@ export function VisitorsChart({ points, metric, timezone, interval }: Props) {
                 );
               }}
             />
-            {/* Rounded at the data end only, so every bar still starts from the same baseline. */}
-            <Bar dataKey="value" fill="var(--chart-3)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+            {/* Rounded at the data end only, so every bar still starts from the same baseline. Drawn at once
+                rather than animated: this chart is redrawn on every filter and period change, and growing the
+                bars again each time only delays reading them. */}
+            <Bar
+              dataKey="value"
+              fill="var(--chart-3)"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={48}
+              isAnimationActive={false}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

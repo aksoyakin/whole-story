@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "api:types": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts",
-    "dev": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts && next dev",
     "build": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts && next build",
+    "dev": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts && next dev",
+    "map:data": "node scripts/generate-map-data.mjs",
     "start": "next start",
-    "typecheck": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts && next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "openapi-typescript openapi.json -o src/lib/api/schema.d.ts && next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -19,6 +20,7 @@
     "openapi-fetch": "^0.17.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-simple-maps": "^5.0.5",
     "recharts": "^3.10.1",
     "server-only": "^0.0.1",
     "shadcn": "^4.21.0",
@@ -29,9 +31,11 @@
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "i18n-iso-countries": "^7.14.0",
     "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "world-atlas": "^2.0.2"
   }
 }

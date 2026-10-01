@@ -6,6 +6,7 @@ import { type Chip, FilterChips } from "@/components/analytics/filter-chips";
 import { StatTiles } from "@/components/analytics/stat-tiles";
 import { TimeseriesTable } from "@/components/analytics/timeseries-table";
 import { type Metric, VisitorsChart } from "@/components/analytics/visitors-chart";
+import { WorldMap } from "@/components/analytics/world-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
 import { type ActiveFilter, parseFilters, serialiseFilters, withFilter, withoutFilter } from "@/lib/filters";
@@ -146,6 +147,15 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
             timezone={site.timezone}
             interval={interval}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-normal text-muted-foreground text-sm">Where visitors are</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WorldMap entries={countries} filterHrefBase={link(withoutFilter(filters, "COUNTRY"))} />
         </CardContent>
       </Card>
 
