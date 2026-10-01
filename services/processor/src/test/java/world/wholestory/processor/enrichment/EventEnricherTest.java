@@ -38,6 +38,6 @@ class EventEnricherTest {
     private static RawEventV1 event(String userAgent) {
         Instant now = Instant.parse("2026-09-28T10:00:00Z");
         return new RawEventV1(1, UuidV7.generate(now), now, UUID.randomUUID(), 1L, null, "pageview",
-                "example.com", "/", null, null, null, null, null, null, null, null, null, userAgent, null);
+                "example.com", "/", null, null, null, null, null, null, null, null, null, null, null, userAgent, null);
     }
 }

@@ -108,7 +108,13 @@ public class GeoResolver {
 
     private static GeoLocation toLocation(CityResponse response) {
         String countryCode = response.country().isoCode();
-        return new GeoLocation(countryCode, subdivisionCode(countryCode, response.subdivisions()), cityGeonameId(response));
+        List<Subdivision> subdivisions = response.subdivisions();
+        return new GeoLocation(
+                countryCode,
+                subdivisionCode(countryCode, subdivisions),
+                subdivisions.isEmpty() ? null : subdivisions.getFirst().name(),
+                cityGeonameId(response),
+                response.city().name());
     }
 
     /**

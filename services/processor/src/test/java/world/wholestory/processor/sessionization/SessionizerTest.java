@@ -71,7 +71,7 @@ class SessionizerTest {
 
     private static EnrichedEvent event(long visitorHash, Long previousVisitorHash, Instant at) {
         RawEventV1 raw = new RawEventV1(1, UuidV7.generate(at), at, SITE, visitorHash, previousVisitorHash, "pageview",
-                "example.com", "/", null, null, null, null, null, null, null, null, null, "UA", null);
+                "example.com", "/", null, null, null, null, null, null, null, null, null, null, null, "UA", null);
         return new EnrichedEvent(raw, ClientProfile.UNKNOWN, null);
     }
 

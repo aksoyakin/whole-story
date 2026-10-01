@@ -27,6 +27,25 @@ class GeoResolverTest {
         assertThat(location.cityGeonameId()).isEqualTo(2655045); // Boxford
     }
 
+    /** The name comes out of the same lookup as the code, which is why reporting needs no second geo dataset. */
+    @Test
+    void resolvesTheNamesAlongsideTheCodes() {
+        GeoLocation location = resolver.resolve("2.125.160.216");
+
+        assertThat(location.cityName()).isEqualTo("Boxford");
+        assertThat(location.subdivisionName()).isEqualTo("England");
+    }
+
+    @Test
+    void aPlaceWithoutANameIsLeftEmptyRatherThanGuessed() {
+        // Covered by the database at country level only.
+        GeoLocation location = resolver.resolve("67.43.156.1");
+
+        assertThat(location.countryCode()).isNotNull();
+        assertThat(location.cityName()).isNull();
+        assertThat(location.subdivisionName()).isNull();
+    }
+
     @Test
     void prefixesTheRegionWithItsCountryBecauseIsoCodesAreNotUniqueOnTheirOwn() {
         // Sweden's Östergötland is "E", which is meaningless without the country.

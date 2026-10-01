@@ -75,7 +75,9 @@ class EventCollector {
                 url.getQueryParams().getFirst("utm_term"),
                 location.countryCode(),
                 location.subdivisionCode(),
+                location.subdivisionName(),
                 location.cityGeonameId(),
+                location.cityName(),
                 agent,
                 incoming.props()));
     }

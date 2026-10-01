@@ -26,7 +26,9 @@ public record RawEventV1(
         String utmTerm,
         String countryCode,
         String subdivisionCode,
+        String subdivisionName,
         Integer cityGeonameId,
+        String cityName,
         String userAgent,
         Map<String, String> props
 ) {
