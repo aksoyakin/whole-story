@@ -122,7 +122,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
         <BreakdownCard title="Sources" entries={sources} />
         <BreakdownCard title="Countries" entries={countries} asCountry />
         <BreakdownCard title="Regions" entries={regions} />
-        <BreakdownCard title="Cities" entries={cities} />
+        <BreakdownCard title="Cities" entries={cities} keyIsAnId />
         <BreakdownCard title="Browsers" entries={browsers} />
         <BreakdownCard title="Operating systems" entries={systems} />
         <BreakdownCard title="Devices" entries={devices} capitalise />
