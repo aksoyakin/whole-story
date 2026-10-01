@@ -9,7 +9,14 @@ import { type Metric, VisitorsChart } from "@/components/analytics/visitors-char
 import { WorldMap } from "@/components/analytics/world-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
-import { type ActiveFilter, parseFilters, serialiseFilters, withFilter, withoutFilter } from "@/lib/filters";
+import {
+  type ActiveFilter,
+  absentLabel,
+  parseFilters,
+  serialiseFilters,
+  withFilter,
+  withoutFilter,
+} from "@/lib/filters";
 import { PERIOD_LABELS, PERIODS, type Period, parsePeriod, toDateRange } from "@/lib/period";
 import { sitesOf } from "@/lib/sites";
 import { type BreakdownEntry, breakdown, type Dimension, summary, timeseries } from "@/lib/stats";
@@ -77,7 +84,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
     filter,
     label:
       filter.value === ""
-        ? "Unknown"
+        ? absentLabel(filter.dimension)
         : (entriesOf[filter.dimension]?.find((entry) => entry.key === filter.value)?.label ?? filter.value),
     removeHref: link(withoutFilter(filters, filter.dimension)),
   }));
@@ -160,14 +167,42 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
       </Card>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard title="Top pages" entries={pages} filterHref={narrow("PAGE")} />
-        <BreakdownCard title="Sources" entries={sources} filterHref={narrow("SOURCE")} />
-        <BreakdownCard title="Countries" entries={countries} asCountry filterHref={narrow("COUNTRY")} />
-        <BreakdownCard title="Regions" entries={regions} filterHref={narrow("REGION")} />
-        <BreakdownCard title="Cities" entries={cities} keyIsAnId filterHref={narrow("CITY")} />
-        <BreakdownCard title="Browsers" entries={browsers} filterHref={narrow("BROWSER")} />
-        <BreakdownCard title="Operating systems" entries={systems} filterHref={narrow("OS")} />
-        <BreakdownCard title="Devices" entries={devices} capitalise filterHref={narrow("DEVICE")} />
+        <BreakdownCard title="Top pages" entries={pages} absent={absentLabel("PAGE")} filterHref={narrow("PAGE")} />
+        <BreakdownCard title="Sources" entries={sources} absent={absentLabel("SOURCE")} filterHref={narrow("SOURCE")} />
+        <BreakdownCard
+          title="Countries"
+          entries={countries}
+          absent={absentLabel("COUNTRY")}
+          asCountry
+          filterHref={narrow("COUNTRY")}
+        />
+        <BreakdownCard title="Regions" entries={regions} absent={absentLabel("REGION")} filterHref={narrow("REGION")} />
+        <BreakdownCard
+          title="Cities"
+          entries={cities}
+          absent={absentLabel("CITY")}
+          keyIsAnId
+          filterHref={narrow("CITY")}
+        />
+        <BreakdownCard
+          title="Browsers"
+          entries={browsers}
+          absent={absentLabel("BROWSER")}
+          filterHref={narrow("BROWSER")}
+        />
+        <BreakdownCard
+          title="Operating systems"
+          entries={systems}
+          absent={absentLabel("OS")}
+          filterHref={narrow("OS")}
+        />
+        <BreakdownCard
+          title="Devices"
+          entries={devices}
+          absent={absentLabel("DEVICE")}
+          capitalise
+          filterHref={narrow("DEVICE")}
+        />
       </section>
     </main>
   );

@@ -8,6 +8,8 @@ const countries = new Intl.DisplayNames(["en"], { type: "region" });
 type Props = {
   title: string;
   entries: BreakdownEntry[];
+  /** What the row with no value is called; it differs per dimension (see `absentLabel`). */
+  absent: string;
   /** Country codes are the one key the browser can name better than the server can. */
   asCountry?: boolean;
   /** Device types are stored as the three canonical lower-case tokens (D-065); the dashboard capitalises them. */
@@ -28,6 +30,7 @@ type Props = {
 export function BreakdownCard({
   title,
   entries,
+  absent,
   asCountry = false,
   capitalise = false,
   keyIsAnId = false,
@@ -57,11 +60,11 @@ export function BreakdownCard({
                     href={filterHref(entry.key)}
                     className="relative truncate py-1 pl-2 underline-offset-4 hover:underline"
                   >
-                    {display(entry, { asCountry, capitalise, keyIsAnId })}
+                    {display(entry, { absent, asCountry, capitalise, keyIsAnId })}
                   </Link>
                 ) : (
                   <span className="relative truncate py-1 pl-2">
-                    {display(entry, { asCountry, capitalise, keyIsAnId })}
+                    {display(entry, { absent, asCountry, capitalise, keyIsAnId })}
                   </span>
                 )}
                 <span className="relative shrink-0 py-1 pr-2 tabular-nums">{numbers.format(entry.visitors)}</span>
@@ -76,9 +79,9 @@ export function BreakdownCard({
 
 function display(
   entry: BreakdownEntry,
-  options: { asCountry: boolean; capitalise: boolean; keyIsAnId: boolean },
+  options: { absent: string; asCountry: boolean; capitalise: boolean; keyIsAnId: boolean },
 ): string {
-  if (entry.key === "") return "Unknown";
+  if (entry.key === "") return options.absent;
   if (options.asCountry) {
     try {
       return countries.of(entry.key) ?? entry.key;
@@ -87,6 +90,6 @@ function display(
     }
   }
   // The server falls back to the key when it has no name; for an id that fallback is not readable.
-  if (options.keyIsAnId && entry.label === entry.key) return "Unknown";
+  if (options.keyIsAnId && entry.label === entry.key) return options.absent;
   return options.capitalise ? entry.label.charAt(0).toUpperCase() + entry.label.slice(1) : entry.label;
 }

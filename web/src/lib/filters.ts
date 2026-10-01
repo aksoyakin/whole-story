@@ -35,7 +35,7 @@ export function parseFilters(raw: string | string[] | undefined): ActiveFilter[]
     const separator = entry.indexOf(":");
     if (separator < 1) return [];
     const dimension = entry.slice(0, separator) as Dimension;
-    // The value may be empty: that is the row a breakdown shows for visits where the dimension is unknown.
+    // The value may be empty: that is the row a breakdown shows for visits with no value for the dimension.
     return DIMENSIONS.includes(dimension) ? [{ dimension, value: entry.slice(separator + 1) }] : [];
   });
 }
@@ -51,4 +51,14 @@ export function withFilter(filters: ActiveFilter[], dimension: Dimension, value:
 
 export function withoutFilter(filters: ActiveFilter[], dimension: Dimension): ActiveFilter[] {
   return filters.filter((filter) => filter.dimension !== dimension);
+}
+
+/**
+ * What an empty value means in a breakdown. For a source it is not missing information: the classifier returns
+ * nothing exactly when there is no external source to name — the address was typed or bookmarked, the referrer
+ * was stripped, or the visitor was moving between pages of the tracked site (ADR 0015). Every other dimension
+ * is genuinely undetermined when it comes back empty.
+ */
+export function absentLabel(dimension: Dimension): string {
+  return dimension === "SOURCE" ? "Direct / None" : "Unknown";
 }
