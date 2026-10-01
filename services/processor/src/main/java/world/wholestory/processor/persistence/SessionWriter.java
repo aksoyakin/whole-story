@@ -24,7 +24,7 @@ class SessionWriter {
             insert into analytics.sessions (
                 session_id, started_at, site_id, visitor_hash, ended_at, pageviews, events, entry_page, exit_page,
                 referrer, referrer_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-                country_code, subdivision_code, city_geoname_id,
+                country_code, subdivision_code, subdivision_name, city_geoname_id, city_name,
                 browser, browser_version, os, os_version, device_type)
             values %s
             on conflict (session_id, started_at) do update set
@@ -34,7 +34,7 @@ class SessionWriter {
                 pageviews = sessions.pageviews + excluded.pageviews,
                 events    = sessions.events + excluded.events
             """;
-    private static final String ROW = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    private static final String ROW = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     private final JdbcClient jdbc;
 
@@ -45,7 +45,7 @@ class SessionWriter {
             bySession.computeIfAbsent(event.sessionId(), id -> new ArrayList<>()).add(event);
         }
 
-        List<Object> params = new ArrayList<>(bySession.size() * 24);
+        List<Object> params = new ArrayList<>(bySession.size() * 26);
         for (List<SessionizedEvent> sessionEvents : bySession.values()) {
             SessionizedEvent first = sessionEvents.getFirst();
             RawEventV1 entry = first.event();
@@ -71,7 +71,9 @@ class SessionWriter {
             params.add(entry.utmTerm());
             params.add(entry.countryCode());
             params.add(entry.subdivisionCode());
+            params.add(entry.subdivisionName());
             params.add(entry.cityGeonameId());
+            params.add(entry.cityName());
             params.add(client.browser());
             params.add(client.browserVersion());
             params.add(client.os());

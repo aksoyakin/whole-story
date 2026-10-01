@@ -25,20 +25,20 @@ class EventWriter {
             insert into analytics.events (
                 event_id, timestamp, site_id, session_id, visitor_hash, name, hostname, pathname,
                 referrer, referrer_source, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
-                country_code, subdivision_code, city_geoname_id,
+                country_code, subdivision_code, subdivision_name, city_geoname_id, city_name,
                 browser, browser_version, os, os_version, device_type, props)
             values %s
             on conflict (event_id, timestamp) do nothing
             returning event_id
             """;
-    private static final String ROW = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
+    private static final String ROW = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)";
 
     private final JdbcClient jdbc;
     private final JsonMapper jsonMapper;
 
     /** @return ids of events that were not stored before; replays return an empty set (D-018, D-032) */
     Set<UUID> insert(List<SessionizedEvent> events) {
-        List<Object> params = new ArrayList<>(events.size() * 24);
+        List<Object> params = new ArrayList<>(events.size() * 26);
         for (SessionizedEvent sessionized : events) {
             RawEventV1 e = sessionized.event();
             ClientProfile client = sessionized.client();
@@ -59,7 +59,9 @@ class EventWriter {
             params.add(e.utmTerm());
             params.add(e.countryCode());
             params.add(e.subdivisionCode());
+            params.add(e.subdivisionName());
             params.add(e.cityGeonameId());
+            params.add(e.cityName());
             params.add(client.browser());
             params.add(client.browserVersion());
             params.add(client.os());

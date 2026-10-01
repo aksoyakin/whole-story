@@ -119,6 +119,39 @@ class EventProcessingIntegrationTest {
         assertThat(bounced(siteId, 12L)).as("a custom event without a pageview").isFalse();
     }
 
+    /** What ingest resolved has to survive the whole pipeline, or the dashboard has codes and no labels. */
+    @Test
+    void storesThePlaceNamesIngestResolved() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        RawEventV1 fromBoxford = new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(now), now, siteId, 13L,
+                null, "pageview", "example.com", "/", null, null, null, null, null, null,
+                "GB", "GB-ENG", "England", 2655045, "Boxford", CHROME_MAC, null);
+        send(List.of(fromBoxford));
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(1));
+
+        Map<String, Object> event = jdbc.sql("select country_code, subdivision_code, subdivision_name, "
+                        + "city_geoname_id, city_name from analytics.api_events where site_id = ?")
+                .param(siteId).query().singleRow();
+        assertThat(event)
+                .containsEntry("country_code", "GB")
+                .containsEntry("subdivision_code", "GB-ENG")
+                .containsEntry("subdivision_name", "England")
+                .containsEntry("city_geoname_id", 2655045)
+                .containsEntry("city_name", "Boxford");
+
+        Map<String, Object> session = jdbc.sql("select country_code, subdivision_name, city_name "
+                        + "from analytics.api_sessions where site_id = ?")
+                .param(siteId).query().singleRow();
+        assertThat(session)
+                .containsEntry("country_code", "GB")
+                .containsEntry("subdivision_name", "England")
+                .containsEntry("city_name", "Boxford");
+    }
+
     @Test
     void neverStoresBotTraffic() {
         UUID siteId = UUID.randomUUID();
@@ -146,7 +179,7 @@ class EventProcessingIntegrationTest {
 
         RawEventV1 fromGoogle = new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(now), now, siteId, 9L, null,
                 "pageview", "example.com", "/", "https://www.google.de/", null, null, null, null, null, null, null,
-                null, CHROME_MAC, null);
+                null, null, null, CHROME_MAC, null);
         send(List.of(fromGoogle));
 
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
@@ -197,6 +230,6 @@ class EventProcessingIntegrationTest {
 
     private static RawEventV1 event(UUID siteId, String name, String path, Instant at, String userAgent, long visitor) {
         return new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(at), at, siteId, visitor, null, name,
-                "example.com", path, null, null, null, null, null, null, null, null, null, userAgent, null);
+                "example.com", path, null, null, null, null, null, null, null, null, null, null, null, userAgent, null);
     }
 }
