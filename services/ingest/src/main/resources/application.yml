@@ -10,6 +10,11 @@ spring:
       properties:
         linger.ms: 5
         enable.idempotence: true
+    # Consumes the compacted site-events topic to know which domains are tracked.
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      auto-offset-reset: earliest
   data:
     redis:
       host: ${REDIS_HOST:localhost}
