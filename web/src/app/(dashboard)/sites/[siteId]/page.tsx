@@ -2,14 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BreakdownCard } from "@/components/analytics/breakdown-card";
+import { type Chip, FilterChips } from "@/components/analytics/filter-chips";
 import { StatTiles } from "@/components/analytics/stat-tiles";
 import { TimeseriesTable } from "@/components/analytics/timeseries-table";
 import { type Metric, VisitorsChart } from "@/components/analytics/visitors-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
+import { type ActiveFilter, parseFilters, serialiseFilters, withFilter, withoutFilter } from "@/lib/filters";
 import { PERIOD_LABELS, PERIODS, type Period, parsePeriod, toDateRange } from "@/lib/period";
 import { sitesOf } from "@/lib/sites";
-import { breakdown, summary, timeseries } from "@/lib/stats";
+import { type BreakdownEntry, breakdown, type Dimension, summary, timeseries } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Dashboard · Whole Story" };
@@ -19,7 +21,11 @@ const METRIC_LABELS: Record<Metric, string> = { visitors: "Unique visitors", pag
 
 type Props = {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ period?: string | string[]; metric?: string | string[] }>;
+  searchParams: Promise<{
+    period?: string | string[];
+    metric?: string | string[];
+    filter?: string | string[];
+  }>;
 };
 
 /** Dashboard state lives in the URL, so every view can be shared and survives a reload (D-047). */
@@ -35,21 +41,45 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
 
   const period = parsePeriod(query.period);
   const metric = parseMetric(query.metric);
+  const filters = parseFilters(query.filter);
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
   const [stats, points, pages, sources, countries, regions, cities, browsers, systems, devices] = await Promise.all([
-    summary(siteId, range),
-    timeseries(siteId, range),
-    breakdown(siteId, range, "PAGE"),
-    breakdown(siteId, range, "SOURCE"),
-    breakdown(siteId, range, "COUNTRY"),
-    breakdown(siteId, range, "REGION"),
-    breakdown(siteId, range, "CITY"),
-    breakdown(siteId, range, "BROWSER"),
-    breakdown(siteId, range, "OS"),
-    breakdown(siteId, range, "DEVICE"),
+    summary(siteId, range, filters),
+    timeseries(siteId, range, filters),
+    breakdown(siteId, range, "PAGE", filters),
+    breakdown(siteId, range, "SOURCE", filters),
+    breakdown(siteId, range, "COUNTRY", filters),
+    breakdown(siteId, range, "REGION", filters),
+    breakdown(siteId, range, "CITY", filters),
+    breakdown(siteId, range, "BROWSER", filters),
+    breakdown(siteId, range, "OS", filters),
+    breakdown(siteId, range, "DEVICE", filters),
   ]);
+
+  const link = (next: ActiveFilter[]) => href(siteId, period, metric, next);
+  const narrow = (dimension: Dimension) => (key: string) => link(withFilter(filters, dimension, key));
+  const entriesOf: Record<string, BreakdownEntry[]> = {
+    PAGE: pages,
+    SOURCE: sources,
+    COUNTRY: countries,
+    REGION: regions,
+    CITY: cities,
+    BROWSER: browsers,
+    OS: systems,
+    DEVICE: devices,
+  };
+  // The label of a filtered value is read back from the breakdown that is still showing it, so a chip can say
+  // "Istanbul" where the URL only carries a geoname id.
+  const chips: Chip[] = filters.map((filter) => ({
+    filter,
+    label:
+      filter.value === ""
+        ? "Unknown"
+        : (entriesOf[filter.dimension]?.find((entry) => entry.key === filter.value)?.label ?? filter.value),
+    removeHref: link(withoutFilter(filters, filter.dimension)),
+  }));
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
@@ -67,7 +97,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
           {PERIODS.map((option) => (
             <Link
               key={option}
-              href={href(siteId, option, metric)}
+              href={href(siteId, option, metric, filters)}
               aria-current={option === period ? "page" : undefined}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm transition-colors",
@@ -82,6 +112,8 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
         </nav>
       </header>
 
+      <FilterChips chips={chips} clearHref={href(siteId, period, metric, [])} />
+
       <StatTiles summary={stats} />
 
       <Card>
@@ -91,7 +123,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
             {METRICS.map((option) => (
               <Link
                 key={option}
-                href={href(siteId, period, option)}
+                href={href(siteId, period, option, filters)}
                 aria-current={option === metric ? "page" : undefined}
                 className={cn(
                   "rounded-md px-3 py-1 text-sm transition-colors",
@@ -118,14 +150,14 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
       </Card>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <BreakdownCard title="Top pages" entries={pages} />
-        <BreakdownCard title="Sources" entries={sources} />
-        <BreakdownCard title="Countries" entries={countries} asCountry />
-        <BreakdownCard title="Regions" entries={regions} />
-        <BreakdownCard title="Cities" entries={cities} keyIsAnId />
-        <BreakdownCard title="Browsers" entries={browsers} />
-        <BreakdownCard title="Operating systems" entries={systems} />
-        <BreakdownCard title="Devices" entries={devices} capitalise />
+        <BreakdownCard title="Top pages" entries={pages} filterHref={narrow("PAGE")} />
+        <BreakdownCard title="Sources" entries={sources} filterHref={narrow("SOURCE")} />
+        <BreakdownCard title="Countries" entries={countries} asCountry filterHref={narrow("COUNTRY")} />
+        <BreakdownCard title="Regions" entries={regions} filterHref={narrow("REGION")} />
+        <BreakdownCard title="Cities" entries={cities} keyIsAnId filterHref={narrow("CITY")} />
+        <BreakdownCard title="Browsers" entries={browsers} filterHref={narrow("BROWSER")} />
+        <BreakdownCard title="Operating systems" entries={systems} filterHref={narrow("OS")} />
+        <BreakdownCard title="Devices" entries={devices} capitalise filterHref={narrow("DEVICE")} />
       </section>
     </main>
   );
@@ -135,6 +167,10 @@ function parseMetric(value: string | string[] | undefined): Metric {
   return METRICS.find((metric) => metric === value) ?? "visitors";
 }
 
-function href(siteId: string, period: Period, metric: Metric): string {
-  return `/sites/${siteId}?period=${period}&metric=${metric}`;
+function href(siteId: string, period: Period, metric: Metric, filters: ActiveFilter[]): string {
+  const query = new URLSearchParams({ period, metric });
+  for (const filter of serialiseFilters(filters)) {
+    query.append("filter", filter);
+  }
+  return `/sites/${siteId}?${query}`;
 }

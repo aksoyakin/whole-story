@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BreakdownEntry } from "@/lib/stats";
 
@@ -16,13 +17,22 @@ type Props = {
    * nothing to print, so the row says so instead of showing the number.
    */
   keyIsAnId?: boolean;
+  /** Narrows the whole dashboard to this row. Without it the rows are plain text. */
+  filterHref?: (key: string) => string;
 };
 
 /**
  * A ranked list of one dimension. Every row carries its own number, so the bar is a comparison aid rather than
  * the only way to read the value — which is what makes a single neutral fill enough.
  */
-export function BreakdownCard({ title, entries, asCountry = false, capitalise = false, keyIsAnId = false }: Props) {
+export function BreakdownCard({
+  title,
+  entries,
+  asCountry = false,
+  capitalise = false,
+  keyIsAnId = false,
+  filterHref,
+}: Props) {
   const highest = entries.reduce((most, entry) => Math.max(most, entry.visitors), 0);
 
   return (
@@ -42,9 +52,18 @@ export function BreakdownCard({ title, entries, asCountry = false, capitalise = 
                   className="absolute inset-y-0 left-0 rounded-r-[4px] bg-muted"
                   style={{ width: `${highest === 0 ? 0 : (entry.visitors / highest) * 100}%` }}
                 />
-                <span className="relative truncate py-1 pl-2">
-                  {display(entry, { asCountry, capitalise, keyIsAnId })}
-                </span>
+                {filterHref ? (
+                  <Link
+                    href={filterHref(entry.key)}
+                    className="relative truncate py-1 pl-2 underline-offset-4 hover:underline"
+                  >
+                    {display(entry, { asCountry, capitalise, keyIsAnId })}
+                  </Link>
+                ) : (
+                  <span className="relative truncate py-1 pl-2">
+                    {display(entry, { asCountry, capitalise, keyIsAnId })}
+                  </span>
+                )}
                 <span className="relative shrink-0 py-1 pr-2 tabular-nums">{numbers.format(entry.visitors)}</span>
               </li>
             ))}

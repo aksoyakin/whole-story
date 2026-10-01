@@ -1,6 +1,7 @@
 import "server-only";
 import { api } from "@/lib/api/client";
 import { sessionHeaders } from "@/lib/auth";
+import { type ActiveFilter, serialiseFilters } from "@/lib/filters";
 
 export type Summary = {
   visitors: number;
@@ -26,6 +27,7 @@ export type Dimension =
   | "DEVICE";
 
 type Range = { from: string; to: string };
+type Query = Range & { filter?: string[] };
 
 const EMPTY_SUMMARY: Summary = {
   visitors: 0,
@@ -35,29 +37,43 @@ const EMPTY_SUMMARY: Summary = {
   averageVisitDuration: 0,
 };
 
-export async function summary(siteId: string, range: Range): Promise<Summary> {
+export async function summary(siteId: string, range: Range, filters: ActiveFilter[] = []): Promise<Summary> {
   const { data } = await api.GET("/api/sites/{siteId}/stats/summary", {
-    params: { path: { siteId }, query: range },
+    params: { path: { siteId }, query: withFilters(range, filters) },
     headers: await sessionHeaders(),
     cache: "no-store",
   });
   return data ?? EMPTY_SUMMARY;
 }
 
-export async function timeseries(siteId: string, range: Range): Promise<TimeseriesPoint[]> {
+export async function timeseries(
+  siteId: string,
+  range: Range,
+  filters: ActiveFilter[] = [],
+): Promise<TimeseriesPoint[]> {
   const { data } = await api.GET("/api/sites/{siteId}/stats/timeseries", {
-    params: { path: { siteId }, query: range },
+    params: { path: { siteId }, query: withFilters(range, filters) },
     headers: await sessionHeaders(),
     cache: "no-store",
   });
   return data ?? [];
 }
 
-export async function breakdown(siteId: string, range: Range, dimension: Dimension, limit = 8) {
+export async function breakdown(
+  siteId: string,
+  range: Range,
+  dimension: Dimension,
+  filters: ActiveFilter[] = [],
+  limit = 8,
+) {
   const { data } = await api.GET("/api/sites/{siteId}/stats/breakdown", {
-    params: { path: { siteId }, query: { ...range, dimension, limit } },
+    params: { path: { siteId }, query: { ...withFilters(range, filters), dimension, limit } },
     headers: await sessionHeaders(),
     cache: "no-store",
   });
   return data ?? [];
+}
+
+function withFilters(range: Range, filters: ActiveFilter[]): Query {
+  return filters.length === 0 ? range : { ...range, filter: serialiseFilters(filters) };
 }
