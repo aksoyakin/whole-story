@@ -16,7 +16,7 @@ git push main ─► GitHub Actions ─► tests (Maven + Testcontainers, Playwr
 | `https://wholestory.world` | `web:3000` | Landing page, tracker at `/js/ws.js` |
 | `https://app.wholestory.world` | `web:3000` | Dashboard |
 | `https://wholestory.world/api/event` | `ingest:8081` | Event collection; longer Traefik rule wins over the web route |
-| — | `api:8080` | Internal only; called by `web` on the Docker network (backend-for-frontend) |
+| — | `api:8080` | Internal only; called by `web` on the Docker network (backend-for-frontend). Holds the user sessions in Redis (ADR 0018) |
 | — | PostgreSQL, Kafka, Redis | Internal only, no published ports |
 
 ## One-time setup

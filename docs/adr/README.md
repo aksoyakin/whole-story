@@ -20,3 +20,4 @@
 | [0015](0015-referrer-source-classification.md) | Referrer source classification | Accepted |
 | [0016](0016-ingest-admission-control.md) | Admission control at ingest | Accepted |
 | [0017](0017-bounce-definition.md) | What counts as a bounce, and where that is defined | Accepted |
+| [0018](0018-authentication-and-sessions.md) | Authentication and sessions | Accepted |

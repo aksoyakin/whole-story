@@ -1,8 +1,10 @@
 package world.wholestory.api;
 
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.MountableFile;
 
@@ -18,6 +20,13 @@ public class TestcontainersConfiguration {
                 .withCopyFileToContainer(
                         MountableFile.forHostPath("../../infra/postgres/init/01-roles-and-schemas.sh", 0755),
                         "/docker-entrypoint-initdb.d/01-roles-and-schemas.sh");
+    }
+
+    /** Sessions live in Redis (ADR 0018), so the context needs a real one. */
+    @Bean
+    @ServiceConnection(name = "redis")
+    GenericContainer<?> redis() {
+        return new GenericContainer<>("redis:8.8.3-alpine").withExposedPorts(6379);
     }
 
     /** Connect as the api's own role, not as the container superuser (D-037). */

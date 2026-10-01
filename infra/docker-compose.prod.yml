@@ -142,8 +142,11 @@ services:
       DATABASE_URL: jdbc:postgresql://postgres:5432/wholestory
       DATABASE_USERNAME: wholestory_api
       DATABASE_PASSWORD: ${API_DB_PASSWORD:?required}
+      # Sessions live in Redis (ADR 0018).
+      REDIS_HOST: redis
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
       # api reads processor's analytics views, which processor's migrations create.
       processor: { condition: service_healthy }
     healthcheck:
