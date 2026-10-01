@@ -161,6 +161,8 @@ services:
     restart: unless-stopped
     environment:
       API_URL: http://api:8080
+      # The snippet customers paste points at the public host, not the dashboard's.
+      TRACKER_URL: https://wholestory.world/js/ws.js
     networks: [internal, public]
     depends_on:
       api: { condition: service_healthy }
