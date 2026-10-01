@@ -78,6 +78,9 @@ class EventIngestionIntegrationTest {
         assertThat(event.countryCode()).isEqualTo("GB");
         assertThat(event.subdivisionCode()).isEqualTo("GB-ENG");
         assertThat(event.cityGeonameId()).isEqualTo(2655045);
+        // The names travel with the codes: reporting prints them and has no geo database of its own.
+        assertThat(event.subdivisionName()).isEqualTo("England");
+        assertThat(event.cityName()).isEqualTo("Boxford");
     }
 
     @Test
