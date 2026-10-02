@@ -7,6 +7,8 @@ import { SESSION_COOKIE } from "@/lib/auth";
 import { parseSetCookie } from "@/lib/set-cookie";
 
 export type AuthFormState = { error?: string };
+export type ForgotPasswordState = { error?: string; sent?: boolean };
+export type ResetPasswordState = { error?: string };
 
 const AFTER_SIGN_IN = "/sites";
 
@@ -44,6 +46,39 @@ export async function signIn(_previous: AuthFormState, form: FormData): Promise<
   }
   await adoptSession(response);
   redirect(AFTER_SIGN_IN);
+}
+
+/**
+ * Asks for a reset link. api answers the same whatever the address is, and so does this: telling the visitor
+ * that an address is unknown would turn the form into a way of finding out who has an account.
+ */
+export async function requestPasswordReset(
+  _previous: ForgotPasswordState,
+  form: FormData,
+): Promise<ForgotPasswordState> {
+  const { response, error } = await api.POST("/api/auth/password-reset/request", {
+    body: { email: String(form.get("email") ?? "") },
+  });
+  if (error || !response.ok) {
+    return { error: "Could not send the link. Try again." };
+  }
+  return { sent: true };
+}
+
+export async function resetPassword(_previous: ResetPasswordState, form: FormData): Promise<ResetPasswordState> {
+  const { response, error } = await api.POST("/api/auth/password-reset", {
+    body: {
+      token: String(form.get("token") ?? ""),
+      password: String(form.get("password") ?? ""),
+    },
+  });
+  if (error || !response.ok) {
+    // One message for a link that is unknown, already used or expired, and for a password that is too short:
+    // api does not distinguish them either, and the way out of all four is the same.
+    return { error: "That link no longer works, or the password is too short. Ask for a new link." };
+  }
+  // Signed out everywhere by the reset, so the new password is used to sign in once, deliberately.
+  redirect("/login?reset=done");
 }
 
 export async function signOut(): Promise<void> {

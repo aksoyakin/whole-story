@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 const SESSION_COOKIE = "SESSION";
-const SIGNED_OUT_PAGES = new Set(["/login", "/register"]);
+const SIGNED_OUT_PAGES = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
 
 /**
  * A cheap gate in front of the dashboard (Next 16 calls this file convention a proxy). It can only see whether a
@@ -22,5 +22,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/register", "/sites", "/sites/:path*", "/account/:path*"],
+  matcher: ["/login", "/register", "/forgot-password", "/reset-password", "/sites", "/sites/:path*", "/account/:path*"],
 };

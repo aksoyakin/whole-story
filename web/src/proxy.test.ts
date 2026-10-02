@@ -28,4 +28,10 @@ describe("the dashboard gate", () => {
     expect(proxy(request("/register", "SESSION=stale")).headers.get("location")).toBeNull();
     expect(proxy(request("/sites", "SESSION=stale")).headers.get("location")).toBeNull();
   });
+
+  /** Whoever is following a reset link has no session by definition, and the link is the only way in. */
+  it("lets the password reset pages through without a session", () => {
+    expect(proxy(request("/forgot-password")).headers.get("location")).toBeNull();
+    expect(proxy(request("/reset-password?token=abc")).headers.get("location")).toBeNull();
+  });
 });
