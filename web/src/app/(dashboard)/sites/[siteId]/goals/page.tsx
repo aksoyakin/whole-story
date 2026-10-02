@@ -6,7 +6,8 @@ import { AddGoalForm } from "@/components/goals/add-goal-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
-import { GOAL_TYPE_LABELS, type GoalType, goalsOf } from "@/lib/goals";
+import { GOAL_TYPE_LABELS, type GoalType } from "@/lib/goal-types";
+import { goalsOf } from "@/lib/goals";
 import { sitesOf } from "@/lib/sites";
 
 export const metadata: Metadata = { title: "Goals · Whole Story" };

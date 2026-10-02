@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { api } from "@/lib/api/client";
 import { sessionHeaders } from "@/lib/auth";
-import type { GoalType } from "@/lib/goals";
+import type { GoalType } from "@/lib/goal-types";
 
 export type DefineGoalState = { error?: string };
 

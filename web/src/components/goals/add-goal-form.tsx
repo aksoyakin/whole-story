@@ -5,9 +5,12 @@ import { type DefineGoalState, defineGoal } from "@/app/(dashboard)/sites/[siteI
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GOAL_TYPE_LABELS, type GoalType } from "@/lib/goals";
+import { GOAL_TYPE_LABELS, type GoalType } from "@/lib/goal-types";
+import { cn } from "@/lib/utils";
 
 const initial: DefineGoalState = {};
+
+const TYPES = Object.keys(GOAL_TYPE_LABELS) as GoalType[];
 
 const HINTS: Record<GoalType, { placeholder: string; hint: string }> = {
   EVENT: {
@@ -20,30 +23,39 @@ const HINTS: Record<GoalType, { placeholder: string; hint: string }> = {
   },
 };
 
+/**
+ * The type is chosen with buttons and submitted through a hidden field rather than with radio inputs.
+ * React resets a form once its action returns, which puts a radio's DOM state back to its default while this
+ * component's state stays where the reader left it: the selection then disagrees with the field label beside it,
+ * and the next submission carries a type nobody chose. Nothing here reads the DOM, so the two cannot drift.
+ */
 export function AddGoalForm({ siteId }: { siteId: string }) {
   const [state, submit, pending] = useActionState(defineGoal, initial);
-  // Held here so the field can say what it expects; the value is submitted as a radio either way.
   const [type, setType] = useState<GoalType>("EVENT");
 
   return (
     <form action={submit} className="flex flex-col gap-4">
       <input type="hidden" name="siteId" value={siteId} />
+      <input type="hidden" name="type" value={type} />
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 font-medium text-sm">What counts as a conversion?</legend>
-        {(Object.keys(GOAL_TYPE_LABELS) as GoalType[]).map((option) => (
-          <label key={option} className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="type"
-              value={option}
-              checked={type === option}
-              onChange={() => setType(option)}
-              className="size-4 accent-primary"
-            />
-            {GOAL_TYPE_LABELS[option]}
-          </label>
-        ))}
+        <div className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+          {TYPES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setType(option)}
+              aria-pressed={type === option}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                type === option ? "bg-background font-medium shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {GOAL_TYPE_LABELS[option]}
+            </button>
+          ))}
+        </div>
       </fieldset>
 
       <div className="flex flex-col gap-1.5">
