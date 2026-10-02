@@ -42,8 +42,11 @@ spring:
   session:
     # Long enough that a dashboard is not a login screen, short enough to expire an abandoned browser (ADR 0018).
     timeout: 14d
-    redis:
-      namespace: wholestory:session
+    # Boot 4 removed spring.session.redis.* in favour of this prefix. The old spelling is not an alias: it is
+    # ignored without a word, which is how the namespace below sat here unapplied since it was written.
+    data:
+      redis:
+        namespace: wholestory:session
 
 server:
   port: 8080
