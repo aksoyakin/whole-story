@@ -19,7 +19,9 @@ const HINTS: Record<GoalType, { placeholder: string; hint: string }> = {
   },
   PAGEVIEW: {
     placeholder: "/thanks",
-    hint: "A path beginning with '/'. Use * for any part of it: /blog/* counts every post.",
+    // The distinction is worth the extra clause: /blog/* leaves out /blog itself, which is the mistake
+    // everybody makes once (ADR 0022).
+    hint: "A path beginning with '/'. * stands for any part of one: /blog* takes the blog and its posts, /blog/* only the posts.",
   },
 };
 

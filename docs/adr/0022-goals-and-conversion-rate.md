@@ -40,6 +40,27 @@ goal's text never becomes part of the statement.
 
 One wildcard character and one rule. A distinction between `*` and `**` buys precision nobody asked for.
 
+**`*` does not stop at a slash.** It is not a glob: it stands for any part of a path, including none and
+including the separators. Taking `wholestory.world` and the paths it might record, these are the matches, run
+against the database rather than reasoned about:
+
+| Goal | Becomes | Matches | Worth knowing |
+|---|---|---|---|
+| `/pricing` | `/pricing` | `/pricing` | not `/pricing/enterprise` |
+| `/docs/*` | `/docs/%` | `/docs/`, `/docs/install`, `/docs/install/next` | **not `/docs` itself** — the trailing slash is required |
+| `/docs*` | `/docs%` | `/docs`, `/docs/`, `/docs/install`, `/docs/install/next` | would also take `/docsearch` |
+| `/docs/*/next` | `/docs/%/next` | `/docs/install/next`, `/docs/a/b/next` | not `/docs/next` |
+| `/100%-off` | `/100\%-off` | `/100%-off` | the per cent sign is escaped, so it matches nothing else |
+| `/100*` | `/100%` | `/100%-off`, `/1000-off` | |
+| `/a_b` | `/a\_b` | `/a_b` | the underscore is escaped, so not `/axb` |
+
+The second row is the one that will catch people: a goal meant as "the whole blog" written `/blog/*` leaves out
+`/blog` itself. `/blog*` covers both.
+
+The two escaped rows are why escaping exists at all. Without it `/100%-off` would read as "starts with `/100`
+and ends with `-off`" and `/a_b` as "any single character between a and b" — both would quietly count more than
+they say, and a goal that over-counts is worse than one that refuses, because the number still looks plausible.
+
 ### Conversions are counted from the events, in one pass
 Each goal contributes two expressions to a single query over `api_events`: the distinct visitors who completed
 it, and how many times it happened. The denominator of the rate is the period's visitors from `api_sessions`,
