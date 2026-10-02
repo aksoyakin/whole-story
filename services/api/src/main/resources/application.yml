@@ -85,3 +85,11 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+  health:
+    mail:
+      # Off, for the reason GeoIP is reported through metrics rather than health (D-059): this indicator opens an
+      # SMTP connection on every check, so the container's ten-second healthcheck would dial the mail host around
+      # eight thousand times a day to deliver a handful of messages — and a mail host that was briefly away would
+      # mark the api unhealthy and take the dashboard down with it. A failed send leaves its outbox row
+      # incomplete, which is the honest record of it.
+      enabled: false
