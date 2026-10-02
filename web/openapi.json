@@ -357,6 +357,62 @@
         }
       }
     },
+    "/api/sites/{siteId}/stats/goals" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "goals",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "from",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "to",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "date"
+          }
+        }, {
+          "name" : "filter",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/GoalConversionResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sites/{siteId}/stats/breakdown" : {
       "get" : {
         "tags" : [ "stats-controller" ],
@@ -706,6 +762,34 @@
           }
         },
         "required" : [ "averageVisitDuration", "bounceRate", "pageviews", "visitors", "visits" ]
+      },
+      "GoalConversionResponse" : {
+        "type" : "object",
+        "properties" : {
+          "goalId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "target" : {
+            "type" : "string"
+          },
+          "visitors" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "completions" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "rate" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        },
+        "required" : [ "completions", "goalId", "rate", "target", "type", "visitors" ]
       },
       "BreakdownEntryResponse" : {
         "type" : "object",

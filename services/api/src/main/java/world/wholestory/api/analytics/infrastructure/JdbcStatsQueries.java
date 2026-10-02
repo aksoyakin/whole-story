@@ -7,16 +7,23 @@ import world.wholestory.api.analytics.application.BreakdownEntry;
 import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
 import world.wholestory.api.analytics.application.Filter;
+import world.wholestory.api.analytics.application.GoalConversion;
+import world.wholestory.api.analytics.application.GoalDefinition;
 import world.wholestory.api.analytics.application.Interval;
 import world.wholestory.api.analytics.application.StatsQueries;
 import world.wholestory.api.analytics.application.SummaryStats;
 import world.wholestory.api.analytics.application.TimeseriesPoint;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.UUID;
 
 /**
@@ -147,6 +154,28 @@ class JdbcStatsQueries implements StatsQueries {
             limit :limit
             """;
 
+    /**
+     * Every goal in one pass over the events, two expressions each.
+     * <p>
+     * The counting comes from {@code api_events} rather than from the rollups, which is a departure from the
+     * first sketch of the data model and deliberate: a conversion rate needs the visitors who converted, which
+     * is a distinct count and therefore not a thing a rollup can hold (D-030). The rollup could still have
+     * supplied the completion total, but that would mean two sources for one card and a way for them to
+     * disagree — and as soon as anything is filtered the rollup cannot answer at all (D-103).
+     * <p>
+     * The denominator is the visitors of the period, the same number the summary tile shows, so the page agrees
+     * with itself.
+     */
+    private static final String GOAL_CONVERSIONS = """
+            with visitors as (select count(distinct s.visitor_hash) as total
+                              %s),
+                 conversions as (select %s
+                                 %s)
+            select v.total, c.*
+            from visitors v
+                     cross join conversions c
+            """;
+
     /** A page belongs to a pageview, not to a visit, so this one is grouped from the events. */
     private static final String BREAKDOWN_BY_EVENT = """
             select coalesce(e.%s::text, '')                     as key,
@@ -220,6 +249,51 @@ class JdbcStatsQueries implements StatsQueries {
                             rs.getLong("pageviews"));
                 })
                 .list();
+    }
+
+    @Override
+    public List<GoalConversion> goals(UUID siteId, DateRange range, List<GoalDefinition> goals,
+                                      List<Filter> filters) {
+        if (goals.isEmpty()) {
+            return List.of();
+        }
+        FilterClauses clauses = FilterClauses.of(filters);
+        StringJoiner expressions = new StringJoiner(",\n                                        ");
+        Map<String, Object> targets = new LinkedHashMap<>();
+        for (int i = 0; i < goals.size(); i++) {
+            GoalDefinition goal = goals.get(i);
+            boolean page = goal.kind() == GoalDefinition.Kind.PAGE;
+            String parameter = "g" + i;
+            targets.put(parameter, page ? PagePattern.toLikePattern(goal.target()) : goal.target());
+            // Generated names and a bound value: the goal's own text never becomes part of the statement.
+            String match = page
+                    ? "(e.name = 'pageview' and e.pathname like :%s escape '\\')".formatted(parameter)
+                    : "e.name = :%s".formatted(parameter);
+            expressions.add("count(distinct case when %s then e.visitor_hash end) as v%d".formatted(match, i));
+            expressions.add("count(*) filter (where %s) as c%d".formatted(match, i));
+        }
+
+        String sql = GOAL_CONVERSIONS.formatted(sessions(clauses), expressions, events(clauses));
+        JdbcClient.StatementSpec statement = bind(sql, siteId, range, clauses);
+        for (Map.Entry<String, Object> target : targets.entrySet()) {
+            statement = statement.param(target.getKey(), target.getValue());
+        }
+        return statement.query((rs, row) -> read(rs, goals)).single();
+    }
+
+    /** One row holds every goal's pair of numbers, plus the visitors they are a share of. */
+    private static List<GoalConversion> read(ResultSet rs, List<GoalDefinition> goals) throws SQLException {
+        long total = rs.getLong("total");
+        List<GoalConversion> conversions = new ArrayList<>(goals.size());
+        for (int i = 0; i < goals.size(); i++) {
+            long visitors = rs.getLong("v" + i);
+            conversions.add(new GoalConversion(
+                    goals.get(i).goalId(),
+                    visitors,
+                    rs.getLong("c" + i),
+                    total == 0 ? 0 : (double) visitors / total));
+        }
+        return conversions;
     }
 
     private static String sessions(FilterClauses clauses) {

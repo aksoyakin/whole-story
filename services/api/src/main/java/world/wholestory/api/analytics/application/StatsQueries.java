@@ -11,4 +11,12 @@ public interface StatsQueries {
     List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, List<Filter> filters);
 
     List<BreakdownEntry> breakdown(UUID siteId, DateRange range, Dimension dimension, int limit, List<Filter> filters);
+
+    /**
+     * How each of a site's goals did. The definitions come from Site Management, which owns them; this side only
+     * evaluates them against the events it already has.
+     *
+     * @return one entry per definition, in the order given, including the goals nobody completed
+     */
+    List<GoalConversion> goals(UUID siteId, DateRange range, List<GoalDefinition> goals, List<Filter> filters);
 }

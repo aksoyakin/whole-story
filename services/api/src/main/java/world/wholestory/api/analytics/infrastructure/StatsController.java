@@ -13,16 +13,20 @@ import org.springframework.web.bind.annotation.RestController;
 import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
 import world.wholestory.api.analytics.application.Filter;
+import world.wholestory.api.analytics.application.GoalConversion;
+import world.wholestory.api.analytics.application.GoalDefinition;
 import world.wholestory.api.analytics.application.Interval;
 import world.wholestory.api.analytics.application.SiteNotVisibleException;
 import world.wholestory.api.analytics.application.StatsQueries;
 import world.wholestory.api.shared.security.AuthenticatedUser;
+import world.wholestory.api.site.ReadableGoal;
 import world.wholestory.api.site.ReadableSite;
 import world.wholestory.api.site.SiteAccess;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /**
  * Dashboard queries. The dates are the site's own: {@code from} and {@code to} are local days, resolved with the
@@ -64,6 +68,34 @@ class StatsController {
         return stats.timeseries(siteId, range, buckets, parse(filter)).stream()
                 .map(StatsResponseMapper::toResponse)
                 .toList();
+    }
+
+    /**
+     * How each of this site's goals did. The definitions belong to Site Management, so they are fetched from it
+     * and translated into what the read side evaluates; a site with no goals answers with an empty list rather
+     * than an error, because having none is an ordinary state.
+     */
+    @GetMapping("/goals")
+    List<GoalConversionResponse> goals(@PathVariable UUID siteId,
+                                       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                       @RequestParam(name = "filter", required = false) List<String> filter,
+                                       @AuthenticationPrincipal AuthenticatedUser principal) {
+        DateRange range = rangeFor(siteId, principal, from, to);
+        List<ReadableGoal> defined = sites.goalsOf(siteId);
+        List<GoalConversion> conversions =
+                stats.goals(siteId, range, defined.stream().map(StatsController::toDefinition).toList(), parse(filter));
+        return IntStream.range(0, conversions.size())
+                .mapToObj(i -> StatsResponseMapper.toResponse(conversions.get(i), defined.get(i)))
+                .toList();
+    }
+
+    /** Site Management's vocabulary into this side's. {@code PAGEVIEW} is a page here: there is nothing else. */
+    private static GoalDefinition toDefinition(ReadableGoal goal) {
+        GoalDefinition.Kind kind = "PAGEVIEW".equals(goal.type())
+                ? GoalDefinition.Kind.PAGE
+                : GoalDefinition.Kind.EVENT;
+        return new GoalDefinition(goal.goalId(), kind, goal.target());
     }
 
     @GetMapping("/breakdown")
