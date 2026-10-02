@@ -66,6 +66,71 @@
         }
       }
     },
+    "/api/sites/{siteId}/goals" : {
+      "get" : {
+        "tags" : [ "goal-controller" ],
+        "operationId" : "list_1",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/GoalResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post" : {
+        "tags" : [ "goal-controller" ],
+        "operationId" : "define",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DefineGoalRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GoalResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/register" : {
       "post" : {
         "tags" : [ "auth-controller" ],
@@ -402,6 +467,34 @@
           }
         }
       }
+    },
+    "/api/sites/{siteId}/goals/{goalId}" : {
+      "delete" : {
+        "tags" : [ "goal-controller" ],
+        "operationId" : "remove_1",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "goalId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
     }
   },
   "components" : {
@@ -448,6 +541,41 @@
           }
         },
         "required" : [ "createdAt", "domain", "publicDashboard", "siteId", "timezone" ]
+      },
+      "DefineGoalRequest" : {
+        "type" : "object",
+        "properties" : {
+          "type" : {
+            "type" : "string",
+            "enum" : [ "EVENT", "PAGEVIEW" ]
+          },
+          "target" : {
+            "type" : "string",
+            "maxLength" : 1024,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "target", "type" ]
+      },
+      "GoalResponse" : {
+        "type" : "object",
+        "properties" : {
+          "goalId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "target" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "createdAt", "goalId", "target", "type" ]
       },
       "RegisterRequest" : {
         "type" : "object",

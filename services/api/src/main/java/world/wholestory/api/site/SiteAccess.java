@@ -1,5 +1,6 @@
 package world.wholestory.api.site;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,4 +19,13 @@ public interface SiteAccess {
 
     /** Empty when the site does not exist, was removed, or belongs to an organization the user is not in. */
     Optional<ReadableSite> readableBy(UUID siteId, UUID userId);
+
+    /**
+     * What this site counts as a conversion. Asked separately from {@link #readableBy} rather than carried on
+     * {@code ReadableSite}, because that answer is needed on every reporting request and this one only by the
+     * goals report — a dashboard makes ten of the former and one of the latter.
+     * <p>
+     * Access is <strong>not</strong> checked here: ask {@code readableBy} first, as the goals report does.
+     */
+    List<ReadableGoal> goalsOf(UUID siteId);
 }
