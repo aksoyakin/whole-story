@@ -21,6 +21,11 @@ Implemented with Site Management. Three details were decided while building it:
   not retry it unless `republish-outstanding-events-on-restart` is set, so the guarantee below was not true until
   it was. It was found the way such things are: a site registered while api could not reach the broker, and the
   announcement simply never went out.
+- **Startup is no longer the only retry.** That setting only resends while the application is coming up, so a
+  broker or mail host that was briefly away left a publication waiting until the next deploy. A scheduled job
+  (`OutboxResubmission`) now resubmits publications older than five minutes, which means consumers may see an
+  event twice — they are idempotent either way
+  ([ADR 0006](0006-idempotent-at-least-once-processing.md), [ADR 0021](0021-password-reset-and-sending-mail.md)).
 - Modulith's own schema initialisation is **switched off** and the table is created by a Flyway migration like
   every other table here. Naming a schema otherwise makes Modulith run `CREATE SCHEMA` at startup, which the api
   role has no privilege for and does not need. The migration has to match the structure version Modulith expects;

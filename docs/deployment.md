@@ -43,6 +43,10 @@ Create a **Compose** service:
   PROCESSOR_DB_PASSWORD=<random>
   MAXMIND_ACCOUNT_ID=<account id>
   MAXMIND_LICENSE_KEY=<license key>
+  MAIL_HOST=<smtp host>
+  MAIL_USERNAME=<mailbox>
+  MAIL_PASSWORD=<mailbox password>
+  MAIL_FROM=<mailbox>
   ```
 
   Database passwords are applied only when the PostgreSQL volume is first initialised.
@@ -70,6 +74,23 @@ CI redeploys through the Dokploy API after the images are pushed. Add three repo
 Keep Dokploy's *Autodeploy* off: a push would otherwise deploy before CI has built the new images.
 Without the secrets, CI still publishes images and skips the deploy step. Services use
 `pull_policy: always`, so every deploy pulls the current `latest` images.
+
+## Outgoing mail
+
+`api` sends the password reset link over SMTP on port 465, implicit TLS (ADR 0021). All four `MAIL_*` variables
+are required: a stack without them refuses to start, rather than accepting reset requests and swallowing them.
+The mailbox has to exist at the mail host, and `MAIL_FROM` should be that same mailbox so SPF and DKIM hold.
+
+To send from a local run, export the credentials first — `api` does not read `.env` itself:
+
+```bash
+set -a; . ./.env; set +a
+mvn -pl services/api spring-boot:run
+```
+
+Deploying this for the first time replaces the session store with Spring Session's indexed repository, which
+writes different keys: everyone signs in once more afterwards. That is expected, and is what makes it possible
+to end every session of one person when their password is reset.
 
 ## GeoIP database
 
