@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BreakdownCard } from "@/components/analytics/breakdown-card";
 import { type Chip, FilterChips } from "@/components/analytics/filter-chips";
+import { GoalsCard } from "@/components/analytics/goals-card";
 import { StatTiles } from "@/components/analytics/stat-tiles";
 import { TimeseriesTable } from "@/components/analytics/timeseries-table";
 import { type Metric, VisitorsChart } from "@/components/analytics/visitors-chart";
@@ -17,6 +18,7 @@ import {
   withFilter,
   withoutFilter,
 } from "@/lib/filters";
+import { goalConversions } from "@/lib/goals";
 import { PERIOD_LABELS, PERIODS, type Period, parsePeriod, toDateRange } from "@/lib/period";
 import { sitesOf } from "@/lib/sites";
 import { type BreakdownEntry, breakdown, type Dimension, summary, timeseries } from "@/lib/stats";
@@ -53,18 +55,20 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
-  const [stats, points, pages, sources, countries, regions, cities, browsers, systems, devices] = await Promise.all([
-    summary(siteId, range, filters),
-    timeseries(siteId, range, filters),
-    breakdown(siteId, range, "PAGE", filters),
-    breakdown(siteId, range, "SOURCE", filters),
-    breakdown(siteId, range, "COUNTRY", filters),
-    breakdown(siteId, range, "REGION", filters),
-    breakdown(siteId, range, "CITY", filters),
-    breakdown(siteId, range, "BROWSER", filters),
-    breakdown(siteId, range, "OS", filters),
-    breakdown(siteId, range, "DEVICE", filters),
-  ]);
+  const [stats, points, goals, pages, sources, countries, regions, cities, browsers, systems, devices] =
+    await Promise.all([
+      summary(siteId, range, filters),
+      timeseries(siteId, range, filters),
+      goalConversions(siteId, range, filters),
+      breakdown(siteId, range, "PAGE", filters),
+      breakdown(siteId, range, "SOURCE", filters),
+      breakdown(siteId, range, "COUNTRY", filters),
+      breakdown(siteId, range, "REGION", filters),
+      breakdown(siteId, range, "CITY", filters),
+      breakdown(siteId, range, "BROWSER", filters),
+      breakdown(siteId, range, "OS", filters),
+      breakdown(siteId, range, "DEVICE", filters),
+    ]);
 
   const link = (next: ActiveFilter[]) => href(siteId, period, metric, next);
   const narrow = (dimension: Dimension) => (key: string) => link(withFilter(filters, dimension, key));
@@ -156,6 +160,8 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
           />
         </CardContent>
       </Card>
+
+      <GoalsCard conversions={goals} manageHref={`/sites/${siteId}/goals`} />
 
       <Card>
         <CardHeader>
