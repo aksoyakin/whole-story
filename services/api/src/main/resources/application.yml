@@ -47,11 +47,34 @@ spring:
     data:
       redis:
         namespace: wholestory:session
+        # Indexed, so that every session of one person can be found and ended when their password is reset
+        # (ADR 0021). The default repository cannot answer that question at all.
+        repository-type: indexed
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      # Port 465 is implicit TLS. Pairing it with starttls.enable is the usual mistake and hangs the connection.
+      mail.smtp.ssl.enable: true
+      # Stated rather than inherited: the certificate has to belong to the host being dialled, or TLS is only
+      # encryption and not the assurance that the credentials are going to the right mail server.
+      mail.smtp.ssl.checkserveridentity: true
+      # Jakarta Mail waits forever by default, which would pin a thread on an unreachable mail host (ADR 0021).
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 
 server:
   port: 8080
 
 wholestory:
+  mail:
+    # A mailbox that exists at the mail host, so SPF and DKIM hold for what it sends.
+    from: ${MAIL_FROM:no-reply@wholestory.world}
+    # Where a reset link points: the dashboard host, which is the only place the form lives.
+    base-url: ${WEB_BASE_URL:http://localhost:3000}
   session:
     # The rest of the cookie's attributes are set in SecurityConfig, where they cannot be lost.
     # Browsers treat localhost as a secure context, so this also holds for local development over HTTP.

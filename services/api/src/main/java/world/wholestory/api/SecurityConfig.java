@@ -46,6 +46,8 @@ class SecurityConfig {
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout").permitAll()
+                        // Whoever needs these cannot sign in by definition (ADR 0021).
+                        .requestMatchers("/api/auth/password-reset", "/api/auth/password-reset/request").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         // The generated contract feeds the web client's types; api is internal either way.
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()

@@ -94,6 +94,48 @@
         }
       }
     },
+    "/api/auth/password-reset" : {
+      "post" : {
+        "tags" : [ "password-reset-controller" ],
+        "operationId" : "reset",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
+    },
+    "/api/auth/password-reset/request" : {
+      "post" : {
+        "tags" : [ "password-reset-controller" ],
+        "operationId" : "request",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RequestPasswordResetRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
+    },
     "/api/auth/logout" : {
       "post" : {
         "tags" : [ "auth-controller" ],
@@ -451,6 +493,33 @@
           }
         },
         "required" : [ "email", "name", "organizationId", "role", "userId" ]
+      },
+      "ResetPasswordRequest" : {
+        "type" : "object",
+        "properties" : {
+          "token" : {
+            "type" : "string",
+            "maxLength" : 200,
+            "minLength" : 0
+          },
+          "password" : {
+            "type" : "string",
+            "maxLength" : 200,
+            "minLength" : 8
+          }
+        },
+        "required" : [ "password", "token" ]
+      },
+      "RequestPasswordResetRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "maxLength" : 254,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "email" ]
       },
       "LoginRequest" : {
         "type" : "object",

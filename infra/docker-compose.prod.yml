@@ -7,6 +7,7 @@
 #   IMAGE_TAG               e.g. latest or a commit sha
 #   POSTGRES_PASSWORD, API_DB_PASSWORD, PROCESSOR_DB_PASSWORD
 #   MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY    GeoLite2 download credentials
+#   MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM, MAIL_PORT (optional, defaults to 465)
 
 name: wholestory
 
@@ -146,6 +147,15 @@ services:
       REDIS_HOST: redis
       # api publishes site-events through the outbox (ADR 0009, ADR 0019).
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Password reset mail over the domain's own SMTP host (ADR 0021). Required rather than optional: a missing
+      # setting here would break the chain silently, and the symptom would be a reset mail that never arrives.
+      MAIL_HOST: ${MAIL_HOST:?required}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:?required}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?required}
+      MAIL_FROM: ${MAIL_FROM:?required}
+      # Where a reset link points.
+      WEB_BASE_URL: https://app.wholestory.world
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
