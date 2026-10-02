@@ -24,3 +24,4 @@
 | [0019](0019-telling-ingest-which-domains-are-tracked.md) | Telling ingest which domains are tracked | Accepted |
 | [0020](0020-reporting-queries.md) | Reporting queries, and the shape of the dashboard they feed | Accepted |
 | [0021](0021-password-reset-and-sending-mail.md) | Password reset, and how this product sends mail | Accepted |
+| [0022](0022-goals-and-conversion-rate.md) | Goals and the conversion rate | Accepted |
