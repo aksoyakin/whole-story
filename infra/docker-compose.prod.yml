@@ -176,6 +176,10 @@ services:
       API_URL: http://api:8080
       # The snippet customers paste points at the public host, not the dashboard's.
       TRACKER_URL: https://wholestory.world/js/ws.js
+      # Which host serves what (proxy.ts). Marketing and the shared dashboards on the apex, the account on
+      # app.; without both names set, routing by host is off, which is what local development needs.
+      MARKETING_HOST: wholestory.world
+      APP_HOST: app.wholestory.world
     networks: [internal, public]
     depends_on:
       api: { condition: service_healthy }
