@@ -108,7 +108,10 @@ services:
       kafka: { condition: service_healthy }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      # Health now answers on the management port, not the service port: actuator was moved off 8081 so that a
+      # public route can never reach /actuator/prometheus (ADR 0024). Pointing this at 8081 would make the
+      # container permanently unhealthy and stop the whole stack from coming up.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9081/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 30
@@ -129,7 +132,7 @@ services:
       kafka: { condition: service_healthy }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9082/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 30
@@ -163,7 +166,7 @@ services:
       # api reads processor's analytics views, which processor's migrations create.
       processor: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9080/actuator/health"]
       interval: 10s
       timeout: 3s
       retries: 30

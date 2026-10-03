@@ -18,6 +18,7 @@ git push main ─► GitHub Actions ─► tests (Maven + Testcontainers, Playwr
 | `https://wholestory.world/api/event` | `ingest:8081` | Event collection; longer Traefik rule wins over the web route |
 | — | `api:8080` | Internal only; called by `web` on the Docker network (backend-for-frontend). Holds the user sessions in Redis (ADR 0018) |
 | — | PostgreSQL, Kafka, Redis | Internal only, no published ports. All three services talk to Kafka: ingest and api publish, processor and ingest consume |
+| — | `api:9080`, `ingest:9081`, `processor:9082` | Internal only, and deliberately so: actuator runs on its own port per service, so `/actuator/health` and `/actuator/prometheus` cannot be reached through a public route (ADR 0024). Routing `ingest` must keep pointing at 8081 |
 
 ## One-time setup
 
@@ -60,6 +61,10 @@ Create a **Compose** service:
 | `web` | `wholestory.world` | `/` | 3000 |
 | `web` | `app.wholestory.world` | `/` | 3000 |
 | `ingest` | `wholestory.world` | `/api/event` (do not strip the path) | 8081 |
+
+Nothing is routed to the management ports (`9080`–`9082`). Container healthchecks use them from inside the
+network; a route to them would publish traffic volumes per site.
+
 
 ### 5. Continuous deployment
 CI redeploys through the Dokploy API after the images are pushed. Add three repository secrets

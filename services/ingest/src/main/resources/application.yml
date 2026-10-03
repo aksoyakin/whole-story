@@ -33,7 +33,21 @@ ingest:
   max-events-per-visitor-per-minute: 60
 
 management:
+  server:
+    # A port of its own, reachable only on the internal network. /actuator/prometheus tells a reader how much
+    # traffic every tracked site gets and why events are rejected; on a separate port no change to a public
+    # route can expose it by accident (ingest is routed to from the public side).
+    # Mirrors the service port so three services can run side by side on one machine: a single shared 9090
+    # would have them fight over it, and a port collision is silent (current-state pitfall 5).
+    port: 9081
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  metrics:
+    distribution:
+      # Without this the HTTP timer publishes only count, sum and max — enough for an average, useless for the
+      # question a load test asks ("how slow was the slow tenth?"). Buckets are what let Prometheus compute a
+      # percentile over a window. Verified by scraping: histogram buckets only appear once this is set.
+      percentiles-histogram:
+        http.server.requests: true
