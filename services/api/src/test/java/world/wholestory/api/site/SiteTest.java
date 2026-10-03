@@ -70,6 +70,58 @@ class SiteTest {
     }
 
     @Test
+    void theTimezoneCanBeMovedAfterwards() {
+        Site site = register();
+        site.pullRecordedEvents();
+
+        site.changeTimezone(Timezone.of("Europe/Istanbul"), LATER);
+
+        assertThat(site.getTimezone()).isEqualTo(Timezone.of("Europe/Istanbul"));
+        assertThat(site.getUpdatedAt()).isEqualTo(LATER);
+    }
+
+    @Test
+    void sharingIsOpenedAndClosedOnRequest() {
+        Site site = register();
+        assertThat(site.isPublicDashboard()).isFalse();
+
+        site.enableSharing(LATER);
+        assertThat(site.isPublicDashboard()).isTrue();
+        assertThat(site.getUpdatedAt()).isEqualTo(LATER);
+
+        site.disableSharing(LATER.plusSeconds(60));
+        assertThat(site.isPublicDashboard()).isFalse();
+    }
+
+    /**
+     * Neither setting changes what is collected, so ingest must never be told about one. A message here would be
+     * read as an instruction about the domain itself (D-122).
+     */
+    @Test
+    void changingSettingsAnnouncesNothing() {
+        Site site = register();
+        site.pullRecordedEvents();
+
+        site.changeTimezone(Timezone.of("Asia/Kolkata"), LATER);
+        site.enableSharing(LATER);
+        site.disableSharing(LATER);
+
+        assertThat(site.pullRecordedEvents()).isEmpty();
+    }
+
+    /** Saving a form without touching it must not look like a change to anyone reading updated_at. */
+    @Test
+    void settingTheValuesItAlreadyHasChangesNothing() {
+        Site site = register();
+        Instant registeredAt = site.getUpdatedAt();
+
+        site.changeTimezone(Timezone.UTC, LATER);
+        site.disableSharing(LATER);
+
+        assertThat(site.getUpdatedAt()).isEqualTo(registeredAt);
+    }
+
+    @Test
     void aSiteNeedsAZoneTheJdkKnows() {
         assertThat(Timezone.of("Europe/Istanbul").zoneId().getId()).isEqualTo("Europe/Istanbul");
         assertThatThrownBy(() -> Timezone.of("Europe/Atlantis")).isInstanceOf(InvalidTimezoneException.class);

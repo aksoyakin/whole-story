@@ -11,7 +11,8 @@ import world.wholestory.api.site.domain.SiteNotFoundException;
 import java.util.UUID;
 
 /**
- * "Is this site this person's to work with?" — asked by every goal use case, so it is answered in one place.
+ * "Is this site this person's to work with?" — asked by every use case that acts on one site, so it is
+ * answered in one place.
  * A site that was removed, and a site belonging to an organization the caller is not in, both answer exactly as
  * one that never existed: an id must not reveal what exists.
  */

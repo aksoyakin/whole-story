@@ -60,6 +60,45 @@ public final class Site {
         return new Site(id, organizationId, domain, timezone, publicDashboard, createdAt, updatedAt, deletedAt);
     }
 
+    /**
+     * Moves where this site's day starts and ends.
+     * <p>
+     * Nothing stored has to move with it: days are cut at query time rather than at write time (D-020), so the
+     * dashboard simply reports every past period in the new zone from the next request onwards. That is also the
+     * cost of changing it — yesterday's numbers can shift by a few hours' worth of visits.
+     */
+    public void changeTimezone(Timezone newTimezone, Instant now) {
+        Objects.requireNonNull(newTimezone, "a site needs a timezone");
+        if (newTimezone.equals(timezone)) {
+            return;
+        }
+        this.timezone = newTimezone;
+        this.updatedAt = now;
+    }
+
+    /**
+     * Opens the read-only dashboard to anyone holding the link.
+     * <p>
+     * No event is recorded. Unlike registering or removing a site, sharing changes nothing about what is
+     * collected, so neither ingest nor processor has any reason to hear about it — the same reasoning that
+     * keeps a goal eventless (D-122). Which site a visitor may read is answered when the link is followed.
+     */
+    public void enableSharing(Instant now) {
+        if (publicDashboard) {
+            return;
+        }
+        this.publicDashboard = true;
+        this.updatedAt = now;
+    }
+
+    public void disableSharing(Instant now) {
+        if (!publicDashboard) {
+            return;
+        }
+        this.publicDashboard = false;
+        this.updatedAt = now;
+    }
+
     /** Idempotent: removing a site twice must not announce it twice, because ingest acts on every message. */
     public void remove(Instant now) {
         if (deletedAt != null) {

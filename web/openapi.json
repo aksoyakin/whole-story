@@ -10,6 +10,43 @@
     "description" : "Generated server url"
   } ],
   "paths" : {
+    "/api/sites/{siteId}/settings" : {
+      "put" : {
+        "tags" : [ "site-controller" ],
+        "operationId" : "updateSettings",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SiteSettingsRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SiteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sites" : {
       "get" : {
         "tags" : [ "site-controller" ],
@@ -555,25 +592,19 @@
   },
   "components" : {
     "schemas" : {
-      "RegisterSiteRequest" : {
+      "SiteSettingsRequest" : {
         "type" : "object",
         "properties" : {
-          "organizationId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "domain" : {
-            "type" : "string",
-            "maxLength" : 253,
-            "minLength" : 0
-          },
           "timezone" : {
             "type" : "string",
             "maxLength" : 64,
             "minLength" : 0
+          },
+          "publicDashboard" : {
+            "type" : "boolean"
           }
         },
-        "required" : [ "domain", "organizationId" ]
+        "required" : [ "publicDashboard", "timezone" ]
       },
       "SiteResponse" : {
         "type" : "object",
@@ -597,6 +628,26 @@
           }
         },
         "required" : [ "createdAt", "domain", "publicDashboard", "siteId", "timezone" ]
+      },
+      "RegisterSiteRequest" : {
+        "type" : "object",
+        "properties" : {
+          "organizationId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "domain" : {
+            "type" : "string",
+            "maxLength" : 253,
+            "minLength" : 0
+          },
+          "timezone" : {
+            "type" : "string",
+            "maxLength" : 64,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "domain", "organizationId" ]
       },
       "DefineGoalRequest" : {
         "type" : "object",

@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,6 +19,8 @@ import world.wholestory.api.site.application.ListSites;
 import world.wholestory.api.site.application.RegisterSite;
 import world.wholestory.api.site.application.RegisterSiteCommand;
 import world.wholestory.api.site.application.RemoveSite;
+import world.wholestory.api.site.application.UpdateSiteSettings;
+import world.wholestory.api.site.application.UpdateSiteSettingsCommand;
 
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +34,7 @@ class SiteController {
     private final RegisterSite registerSite;
     private final ListSites listSites;
     private final RemoveSite removeSite;
+    private final UpdateSiteSettings updateSiteSettings;
 
     @PostMapping
     ResponseEntity<SiteResponse> register(@Valid @RequestBody RegisterSiteRequest request,
@@ -46,6 +50,18 @@ class SiteController {
         return listSites.of(organizationId, principal.getUserId()).stream()
                 .map(SiteResponseMapper::toResponse)
                 .toList();
+    }
+
+    /**
+     * Replaces a site's settings and answers with the site as it now stands, so the caller does not have to ask
+     * again to find out what it agreed to. A site that is not the caller's answers like one that is not there.
+     */
+    @PutMapping("/{siteId}/settings")
+    SiteResponse updateSettings(@PathVariable UUID siteId,
+                                @Valid @RequestBody SiteSettingsRequest request,
+                                @AuthenticationPrincipal AuthenticatedUser principal) {
+        return SiteResponseMapper.toResponse(updateSiteSettings.update(new UpdateSiteSettingsCommand(
+                siteId, principal.getUserId(), request.timezone(), request.publicDashboard())));
     }
 
     @DeleteMapping("/{siteId}")
