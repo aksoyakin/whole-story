@@ -99,7 +99,11 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
         <div className="flex flex-col gap-1">
           <h1 className="font-semibold text-2xl tracking-tight">{site.domain}</h1>
           <p className="text-muted-foreground text-xs">
-            Days start and end in {site.timezone}.{" "}
+            Days start and end in{" "}
+            <Link href={`/sites/${siteId}/settings`} className="underline underline-offset-4">
+              {site.timezone}
+            </Link>
+            .{" "}
             <Link href="/sites" className="underline underline-offset-4">
               All sites
             </Link>

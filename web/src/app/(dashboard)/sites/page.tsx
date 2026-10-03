@@ -55,7 +55,13 @@ export default async function SitesPage() {
                 <span className="text-muted-foreground text-sm tabular-nums">
                   {numbers.format(visitors[index])} visitors · 7 days
                 </span>
-                <span className="text-muted-foreground text-xs">{site.timezone}</span>
+                <Link
+                  href={`/sites/${site.siteId}/settings`}
+                  className="text-muted-foreground text-xs underline-offset-4 hover:underline"
+                >
+                  {site.timezone}
+                  {site.publicDashboard ? " · shared" : ""}
+                </Link>
                 <form action={removeSite}>
                   <input type="hidden" name="siteId" value={site.siteId} />
                   <Button type="submit" variant="destructive" size="sm">
