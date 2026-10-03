@@ -9,9 +9,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.json.JsonMapper;
 import world.wholestory.contracts.RawEventV1;
+import world.wholestory.contracts.RealtimeVisitorKeys;
 import world.wholestory.contracts.Topics;
 import world.wholestory.contracts.UuidV7;
 import world.wholestory.processor.TestcontainersConfiguration;
@@ -38,6 +40,8 @@ class EventProcessingIntegrationTest {
     KafkaConnectionDetails kafka;
     @Autowired
     JdbcClient jdbc;
+    @Autowired
+    StringRedisTemplate redis;
     @Autowired
     JsonMapper jsonMapper;
 
@@ -189,6 +193,32 @@ class EventProcessingIntegrationTest {
                 .query(String.class).single()).isEqualTo("Google");
         assertThat(jdbc.sql("select referrer_source from analytics.sessions where site_id = ?").param(siteId)
                 .query(String.class).single()).isEqualTo("Google");
+    }
+
+    /**
+     * The reason this is counted here and not in ingest: the bot filter has run by now. Counted there, the most
+     * visible number on the dashboard would include every crawler.
+     */
+    @Test
+    void countsWhoIsOnTheSiteRightNowAndNotTheCrawlers() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        send(List.of(
+                event(siteId, "pageview", "/", now, GOOGLEBOT, 70L),
+                event(siteId, "pageview", "/", now.plusSeconds(1), CHROME_MAC, 71L),
+                // The same visitor again is the same person, not a second one.
+                event(siteId, "pageview", "/docs", now.plusSeconds(2), CHROME_MAC, 71L),
+                event(siteId, "pageview", "/", now.plusSeconds(3), CHROME_MAC, 72L)));
+
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(onSiteNow(siteId)).isEqualTo(2L));
+    }
+
+    private long onSiteNow(UUID siteId) {
+        Long counted = redis.opsForZSet()
+                .count(RealtimeVisitorKeys.forSite(siteId), Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
+        return counted == null ? 0L : counted;
     }
 
     @Test

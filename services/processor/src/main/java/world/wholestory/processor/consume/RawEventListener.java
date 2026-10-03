@@ -11,6 +11,8 @@ import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.Topics;
 import world.wholestory.processor.enrichment.EventEnricher;
 import world.wholestory.processor.persistence.BatchPersister;
+import world.wholestory.processor.realtime.RealtimeVisitorRecorder;
+import world.wholestory.processor.sessionization.SessionizedEvent;
 import world.wholestory.processor.sessionization.Sessionizer;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ class RawEventListener {
     private final EventEnricher enricher;
     private final Sessionizer sessionizer;
     private final BatchPersister persister;
+    private final RealtimeVisitorRecorder realtimeVisitors;
 
     @KafkaListener(topics = Topics.RAW_EVENTS)
     void onBatch(List<ConsumerRecord<String, byte[]>> records) {
@@ -35,7 +38,11 @@ class RawEventListener {
         for (ConsumerRecord<String, byte[]> record : records) {
             decode(record, events);
         }
-        int stored = persister.persist(sessionizer.sessionize(enricher.enrich(events)));
+        List<SessionizedEvent> sessionized = sessionizer.sessionize(enricher.enrich(events));
+        int stored = persister.persist(sessionized);
+        // Outside the database transaction on purpose: this is a number that expires by itself, and it must
+        // not be able to fail a batch that was written correctly.
+        realtimeVisitors.record(sessionized);
         log.debug("Batch of {} records, {} new events stored", records.size(), stored);
     }
 
