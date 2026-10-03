@@ -1,20 +1,83 @@
 {
   "uid": "wholestory-overview",
   "title": "Whole Story — pipeline",
-  "description": "Ordered by what the product promises rather than by what is easy to graph: the pipeline first, then the two failures that were deliberately kept out of /actuator/health, then latency, and the JVMs last. Provisioned from infra/grafana/dashboards.",
+  "description": "Ordered by what the product promises rather than by what is easy to graph: whether the numbers are arriving at all, then the pipeline, then the two failures that were deliberately kept out of /actuator/health, then latency, and the JVMs last. Provisioned from infra/grafana/dashboards.",
   "tags": [
     "wholestory"
   ],
   "timezone": "browser",
   "editable": false,
   "schemaVersion": 41,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-1h",
     "to": "now"
   },
   "panels": [
+    {
+      "type": "stat",
+      "title": "Is anything being measured?",
+      "description": "Whether Prometheus is reaching each service. This is first on the page because a target that has stopped answering does not make the panels below it fail — they show no data, which looks exactly like no traffic. 'No data' here rather than a red tile means the target is not in the scrape configuration at all, which is a different mistake with the same symptom.",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "up{job=\"wholestory\"}",
+          "legendFormat": "{{service}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Not answering",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Scraped",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
     {
       "type": "row",
       "title": "The pipeline",
@@ -24,7 +87,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "panels": []
     },
@@ -41,7 +104,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 1
+        "y": 5
       },
       "targets": [
         {
@@ -92,7 +155,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 1
+        "y": 5
       },
       "targets": [
         {
@@ -143,7 +206,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 13
       },
       "targets": [
         {
@@ -194,7 +257,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 13
       },
       "targets": [
         {
@@ -240,7 +303,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 21
       },
       "panels": []
     },
@@ -257,7 +320,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -274,7 +337,7 @@
       ],
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -320,7 +383,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -337,7 +400,7 @@
       ],
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -367,7 +430,7 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -413,7 +476,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 27
       },
       "panels": []
     },
@@ -430,7 +493,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "targets": [
         {
@@ -492,7 +555,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 28
       },
       "targets": [
         {
@@ -539,7 +602,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "panels": []
     },
@@ -556,7 +619,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 37
       },
       "targets": [
         {
@@ -607,7 +670,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 37
       },
       "targets": [
         {
