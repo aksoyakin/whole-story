@@ -8,6 +8,8 @@ import world.wholestory.api.shared.domain.UserId;
 import world.wholestory.api.site.ReadableGoal;
 import world.wholestory.api.site.ReadableSite;
 import world.wholestory.api.site.SiteAccess;
+import world.wholestory.api.site.domain.Domain;
+import world.wholestory.api.site.domain.InvalidDomainException;
 import world.wholestory.api.site.domain.Site;
 import world.wholestory.api.site.domain.SiteId;
 
@@ -31,6 +33,24 @@ class SiteAccessService implements SiteAccess {
                 .filter(site -> !site.isRemoved())
                 .filter(site -> organizations.isMember(site.getOrganizationId(), UserId.of(userId)))
                 .map(SiteAccessService::toReadable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ReadableSite> publiclyReadable(String domain) {
+        return normalise(domain)
+                .flatMap(sites::findByDomain)
+                .filter(Site::isPublicDashboard)
+                .map(SiteAccessService::toReadable);
+    }
+
+    /** A name that is not a domain is simply a domain we do not track; the caller must not learn the difference. */
+    private static Optional<Domain> normalise(String domain) {
+        try {
+            return Optional.of(Domain.of(domain));
+        } catch (InvalidDomainException e) {
+            return Optional.empty();
+        }
     }
 
     @Override

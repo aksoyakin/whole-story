@@ -48,6 +48,9 @@ class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/logout").permitAll()
                         // Whoever needs these cannot sign in by definition (ADR 0021).
                         .requestMatchers("/api/auth/password-reset", "/api/auth/password-reset/request").permitAll()
+                        // A dashboard its owner chose to share. These read nothing from the session, and what
+                        // they will answer for is decided by the site's own sharing flag, not by this matcher.
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
                         // The generated contract feeds the web client's types; api is internal either way.
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()

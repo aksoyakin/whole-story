@@ -5,6 +5,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import world.wholestory.api.shared.domain.OrganizationId;
 import world.wholestory.api.site.application.SiteRepository;
+import world.wholestory.api.site.domain.Domain;
 import world.wholestory.api.site.domain.DomainAlreadyTrackedException;
 import world.wholestory.api.site.domain.Site;
 import world.wholestory.api.site.domain.SiteId;
@@ -36,6 +37,12 @@ class JpaSiteRepository implements SiteRepository {
     @Override
     public Optional<Site> findById(SiteId id) {
         return sites.findById(id.value()).map(SiteJpaMapper::toDomain);
+    }
+
+    /** The value object has already normalised the name, so this compares what the index stores. */
+    @Override
+    public Optional<Site> findByDomain(Domain domain) {
+        return sites.findByDomainAndDeletedAtIsNull(domain.value()).map(SiteJpaMapper::toDomain);
     }
 
     @Override

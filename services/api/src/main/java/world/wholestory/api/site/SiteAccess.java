@@ -21,6 +21,15 @@ public interface SiteAccess {
     Optional<ReadableSite> readableBy(UUID siteId, UUID userId);
 
     /**
+     * The site behind a public dashboard, addressed by its domain because that is what the shared URL carries.
+     * <p>
+     * Empty when the domain is not tracked, when its site was removed, when sharing is off — and when the name
+     * is not a domain at all. One answer for all four, so that the URL cannot be used to find out which sites
+     * exist or which of them have sharing switched off.
+     */
+    Optional<ReadableSite> publiclyReadable(String domain);
+
+    /**
      * What this site counts as a conversion. Asked separately from {@link #readableBy} rather than carried on
      * {@code ReadableSite}, because that answer is needed on every reporting request and this one only by the
      * goals report — a dashboard makes ten of the former and one of the latter.
