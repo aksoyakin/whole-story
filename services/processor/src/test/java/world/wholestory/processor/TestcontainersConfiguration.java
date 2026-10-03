@@ -54,4 +54,10 @@ public class TestcontainersConfiguration {
     NewTopic rawEventsTopic() {
         return TopicBuilder.name(Topics.RAW_EVENTS).partitions(1).build();
     }
+
+    /** In production this one is declared by api, which publishes a site's purge through its outbox. */
+    @Bean
+    NewTopic sitePurgeTopic() {
+        return TopicBuilder.name(Topics.SITE_PURGE).partitions(1).build();
+    }
 }
