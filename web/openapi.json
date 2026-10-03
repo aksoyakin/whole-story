@@ -394,6 +394,33 @@
         }
       }
     },
+    "/api/sites/{siteId}/stats/realtime" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "realtime",
+        "parameters" : [ {
+          "name" : "siteId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RealtimeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sites/{siteId}/stats/goals" : {
       "get" : {
         "tags" : [ "stats-controller" ],
@@ -657,6 +684,32 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/public/sites/{domain}/stats/realtime" : {
+      "get" : {
+        "tags" : [ "public-stats-controller" ],
+        "operationId" : "realtime_1",
+        "parameters" : [ {
+          "name" : "domain",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RealtimeResponse"
                 }
               }
             }
@@ -1081,6 +1134,16 @@
           }
         },
         "required" : [ "averageVisitDuration", "bounceRate", "pageviews", "visitors", "visits" ]
+      },
+      "RealtimeResponse" : {
+        "type" : "object",
+        "properties" : {
+          "visitors" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "visitors" ]
       },
       "GoalConversionResponse" : {
         "type" : "object",

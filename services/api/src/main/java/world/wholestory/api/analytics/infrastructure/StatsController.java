@@ -14,6 +14,7 @@ import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
 import world.wholestory.api.analytics.application.GoalConversion;
 import world.wholestory.api.analytics.application.Interval;
+import world.wholestory.api.analytics.application.RealtimeVisitors;
 import world.wholestory.api.analytics.application.SiteNotVisibleException;
 import world.wholestory.api.analytics.application.StatsQueries;
 import world.wholestory.api.shared.security.AuthenticatedUser;
@@ -36,6 +37,7 @@ import java.util.stream.IntStream;
 class StatsController {
 
     private final StatsQueries stats;
+    private final RealtimeVisitors realtimeVisitors;
     private final SiteAccess sites;
 
     @GetMapping("/summary")
@@ -46,6 +48,16 @@ class StatsController {
                             @AuthenticationPrincipal AuthenticatedUser principal) {
         return StatsResponseMapper.toResponse(
                 stats.summary(siteId, rangeFor(siteId, principal, from, to), StatsRequests.parseFilters(filter)));
+    }
+
+    /**
+     * Who is on the site right now. No date range and no filter: this one is not a report over stored events
+     * but a count the processor keeps in Redis as they arrive.
+     */
+    @GetMapping("/realtime")
+    RealtimeResponse realtime(@PathVariable UUID siteId, @AuthenticationPrincipal AuthenticatedUser principal) {
+        sites.readableBy(siteId, principal.getUserId()).orElseThrow(SiteNotVisibleException::new);
+        return new RealtimeResponse(realtimeVisitors.on(siteId));
     }
 
     /** Buckets are hourly for a single day and daily for anything longer, unless the caller says otherwise. */

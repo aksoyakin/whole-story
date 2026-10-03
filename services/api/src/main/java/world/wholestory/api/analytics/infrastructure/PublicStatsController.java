@@ -13,6 +13,7 @@ import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
 import world.wholestory.api.analytics.application.GoalConversion;
 import world.wholestory.api.analytics.application.Interval;
+import world.wholestory.api.analytics.application.RealtimeVisitors;
 import world.wholestory.api.analytics.application.SiteNotVisibleException;
 import world.wholestory.api.analytics.application.StatsQueries;
 import world.wholestory.api.site.ReadableGoal;
@@ -41,6 +42,7 @@ import java.util.stream.IntStream;
 class PublicStatsController {
 
     private final StatsQueries stats;
+    private final RealtimeVisitors realtimeVisitors;
     private final SiteAccess sites;
 
     @GetMapping("/summary")
@@ -51,6 +53,11 @@ class PublicStatsController {
         ReadableSite site = shared(domain);
         return StatsResponseMapper.toResponse(
                 stats.summary(site.siteId(), rangeOf(site, from, to), StatsRequests.parseFilters(filter)));
+    }
+
+    @GetMapping("/realtime")
+    RealtimeResponse realtime(@PathVariable String domain) {
+        return new RealtimeResponse(realtimeVisitors.on(shared(domain).siteId()));
     }
 
     @GetMapping("/timeseries")
