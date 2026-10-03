@@ -99,7 +99,13 @@ public final class Site {
         this.updatedAt = now;
     }
 
-    /** Idempotent: removing a site twice must not announce it twice, because ingest acts on every message. */
+    /**
+     * Stops tracking a site, and says so twice: once to free the domain and once to release the data that was
+     * collected under it. The two go to different services on different topics (see {@link SiteDataPurgeRequested}).
+     * <p>
+     * Idempotent, which both of them need — ingest acts on every message it reads, and a second purge would be
+     * work done for nothing.
+     */
     public void remove(Instant now) {
         if (deletedAt != null) {
             return;
@@ -108,6 +114,7 @@ public final class Site {
         this.updatedAt = now;
         this.publicDashboard = false;
         this.recordedEvents.add(new SiteRemoved(id, domain, now));
+        this.recordedEvents.add(new SiteDataPurgeRequested(id, now));
     }
 
     public boolean isRemoved() {

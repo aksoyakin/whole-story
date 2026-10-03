@@ -6,6 +6,7 @@ import world.wholestory.api.shared.domain.OrganizationId;
 import world.wholestory.api.site.domain.Domain;
 import world.wholestory.api.site.domain.InvalidTimezoneException;
 import world.wholestory.api.site.domain.Site;
+import world.wholestory.api.site.domain.SiteDataPurgeRequested;
 import world.wholestory.api.site.domain.SiteId;
 import world.wholestory.api.site.domain.SiteRegistered;
 import world.wholestory.api.site.domain.SiteRemoved;
@@ -43,8 +44,12 @@ class SiteTest {
         assertThat(site.pullRecordedEvents()).isEmpty();
     }
 
+    /**
+     * Two announcements, because two services have to hear different things: ingest that the domain is free,
+     * and the processor that the data collected under it may go.
+     */
     @Test
-    void removingASiteAnnouncesItAndClosesTheSharedDashboard() {
+    void removingASiteAnnouncesItTwiceAndClosesTheSharedDashboard() {
         Site site = register();
         site.pullRecordedEvents();
 
@@ -53,7 +58,17 @@ class SiteTest {
         assertThat(site.isRemoved()).isTrue();
         assertThat(site.deletedAt()).contains(LATER);
         assertThat(site.isPublicDashboard()).isFalse();
-        assertThat(site.pullRecordedEvents()).singleElement().isInstanceOf(SiteRemoved.class);
+
+        List<DomainEvent> events = site.pullRecordedEvents();
+        assertThat(events).hasSize(2);
+        assertThat(events).hasAtLeastOneElementOfType(SiteRemoved.class);
+        assertThat(events).filteredOn(SiteDataPurgeRequested.class::isInstance)
+                .singleElement()
+                .satisfies(event -> {
+                    SiteDataPurgeRequested purge = (SiteDataPurgeRequested) event;
+                    assertThat(purge.siteId()).isEqualTo(site.getId());
+                    assertThat(purge.occurredAt()).isEqualTo(LATER);
+                });
     }
 
     /** Ingest acts on every message it reads, so announcing a removal twice would be a second instruction. */

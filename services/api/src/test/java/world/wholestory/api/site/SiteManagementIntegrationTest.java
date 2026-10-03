@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.json.JsonMapper;
 import world.wholestory.api.TestcontainersConfiguration;
+import world.wholestory.contracts.SitePurgeV1;
 import world.wholestory.contracts.Topics;
 import world.wholestory.contracts.TrackedDomainV1;
 
@@ -216,6 +217,47 @@ class SiteManagementIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(account.organizationId(), "https://example.com/admin", null)))
                 .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * The second announcement a removal makes. ingest hears that the domain is free on {@code site-events};
+     * the processor hears here that the data may go, because it owns the analytics schema and api cannot
+     * delete a row of it (D-012, D-034).
+     */
+    @Test
+    void removingASiteAlsoAsksForItsDataToBePurged() throws Exception {
+        Account account = register();
+        UUID siteId = registerSite(account, uniqueDomain());
+
+        mvc.perform(delete("/api/sites/{siteId}", siteId).cookie(account.session()))
+                .andExpect(status().isNoContent());
+
+        SitePurgeV1 purge = await().atMost(Duration.ofSeconds(25))
+                .until(() -> purgeFor(siteId), Optional::isPresent)
+                .orElseThrow();
+        assertThat(purge.siteId()).isEqualTo(siteId);
+        assertThat(purge.schemaVersion()).isEqualTo(SitePurgeV1.SCHEMA_VERSION);
+    }
+
+    /** Keyed on the site id, which is never reused, so compaction can only replace a site's record with its own. */
+    private Optional<SitePurgeV1> purgeFor(UUID siteId) {
+        Map<String, Object> config = Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, String.join(",", kafka.getBootstrapServers()),
+                ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        try (var consumer = new KafkaConsumer<>(config, new StringDeserializer(), new ByteArrayDeserializer())) {
+            consumer.subscribe(List.of(Topics.SITE_PURGE));
+            Optional<SitePurgeV1> found = Optional.empty();
+            for (int attempt = 0; attempt < 5; attempt++) {
+                ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofSeconds(1));
+                for (ConsumerRecord<String, byte[]> record : records) {
+                    if (siteId.toString().equals(record.key())) {
+                        found = Optional.of(jsonMapper.readValue(record.value(), SitePurgeV1.class));
+                    }
+                }
+            }
+            return found;
+        }
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder statsRequest(UUID siteId) {

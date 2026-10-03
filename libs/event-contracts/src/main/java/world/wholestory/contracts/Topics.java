@@ -14,6 +14,16 @@ public final class Topics {
      */
     public static final String SITE_EVENTS = "site-events";
 
+    /**
+     * Sites whose collected data may be deleted, published by Site Management and consumed by the processor.
+     * Key: the site id.
+     * <p>
+     * Separate from {@link #SITE_EVENTS} because the two carry different kinds of thing. That topic is the
+     * current state of a domain and is keyed on it; this one is work that has to happen once, so it is keyed on
+     * a site id, which is never reused and therefore cannot be compacted away by anything but itself.
+     */
+    public static final String SITE_PURGE = "site-purge";
+
     private Topics() {
     }
 }

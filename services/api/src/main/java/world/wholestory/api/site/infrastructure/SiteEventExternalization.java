@@ -7,8 +7,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.modulith.events.EventExternalizationConfiguration;
 import org.springframework.modulith.events.RoutingTarget;
+import world.wholestory.api.site.domain.SiteDataPurgeRequested;
 import world.wholestory.api.site.domain.SiteRegistered;
 import world.wholestory.api.site.domain.SiteRemoved;
+import world.wholestory.contracts.SitePurgeV1;
 import world.wholestory.contracts.Topics;
 import world.wholestory.contracts.TrackedDomainV1;
 
@@ -28,7 +30,9 @@ class SiteEventExternalization {
     @Bean
     EventExternalizationConfiguration siteEventRouting() {
         return EventExternalizationConfiguration.externalizing()
-                .select(event -> event instanceof SiteRegistered || event instanceof SiteRemoved)
+                .select(event -> event instanceof SiteRegistered
+                        || event instanceof SiteRemoved
+                        || event instanceof SiteDataPurgeRequested)
                 .mapping(SiteRegistered.class, event -> TrackedDomainV1.tracked(
                         event.domain().value(),
                         event.siteId().value(),
@@ -36,8 +40,12 @@ class SiteEventExternalization {
                         event.occurredAt()))
                 .mapping(SiteRemoved.class, event -> TrackedDomainV1.untracked(
                         event.domain().value(), event.siteId().value(), event.occurredAt()))
+                .mapping(SiteDataPurgeRequested.class, event ->
+                        SitePurgeV1.of(event.siteId().value(), event.occurredAt()))
                 .route(SiteRegistered.class, event -> target(event.domain().value()))
                 .route(SiteRemoved.class, event -> target(event.domain().value()))
+                .route(SiteDataPurgeRequested.class, event -> RoutingTarget.forTarget(Topics.SITE_PURGE)
+                        .andKey(event.siteId().value().toString()))
                 .build();
     }
 
@@ -53,6 +61,19 @@ class SiteEventExternalization {
     @Bean
     NewTopic siteEventsTopic() {
         return TopicBuilder.name(Topics.SITE_EVENTS)
+                .partitions(1)
+                .config(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT)
+                .build();
+    }
+
+    /**
+     * Compacted as well, but for the opposite reason: not so that the log can be replayed as state, but so that
+     * a purge cannot quietly expire before the processor has done it. The key is the site id, which is never
+     * reused, so compaction can only ever replace a site's record with its own.
+     */
+    @Bean
+    NewTopic sitePurgeTopic() {
+        return TopicBuilder.name(Topics.SITE_PURGE)
                 .partitions(1)
                 .config(TopicConfig.CLEANUP_POLICY_CONFIG, TopicConfig.CLEANUP_POLICY_COMPACT)
                 .build();
