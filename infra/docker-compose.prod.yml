@@ -8,6 +8,7 @@
 #   POSTGRES_PASSWORD, API_DB_PASSWORD, PROCESSOR_DB_PASSWORD
 #   MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY    GeoLite2 download credentials
 #   MAIL_HOST, MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM, MAIL_PORT (optional, defaults to 465)
+#   GRAFANA_ADMIN_PASSWORD  the login for https://metrics.wholestory.world (GRAFANA_ADMIN_USER optional)
 
 name: wholestory
 
@@ -187,6 +188,51 @@ services:
     depends_on:
       api: { condition: service_healthy }
 
+  # Observability. The host has 32 GB with 8 in use, which is what settled the question of whether these two
+  # belong next to four JVMs, Postgres and Kafka (ADR 0024).
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      # Nothing writes to Prometheus from outside and nobody opens its own UI: it is scraped from within this
+      # network and read through Grafana. Turning the admin API off removes the delete/snapshot endpoints.
+      - --web.enable-admin-api=false
+    volumes:
+      - ./prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # Internal only, and deliberately not routed: Prometheus has no authentication whatsoever.
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana-oss:12.3.1
+    restart: unless-stopped
+    environment:
+      # The one published piece of the monitoring stack, so it carries the login. Anonymous access and sign-up
+      # are both off explicitly rather than left at their defaults: these dashboards show customer traffic.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Behind Traefik, so Grafana has to be told its own address or its redirects point at the container.
+      GF_SERVER_ROOT_URL: https://metrics.wholestory.world
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # Grafana's own database: who is logged in, saved preferences. The dashboards come from the files above
+      # on every start, so losing this volume costs nothing but a session.
+      - grafana-data:/var/lib/grafana
+    networks: [internal, public]
+    depends_on:
+      prometheus: { condition: service_healthy }
+
 networks:
   internal:
   # Traefik's network, managed by Dokploy.
@@ -199,3 +245,5 @@ volumes:
   kafka-data:
   redis-data:
   geoip:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,21 @@
+# Local scrape configuration. The three Spring Boot services run on the host (mvn spring-boot:run), so they are
+# reached through host.docker.internal; in a containerised setup the targets would be the service names.
+#
+# Actuator answers on a port of its own, one per service, mirroring the service port (8080 -> 9080). That is
+# what keeps /actuator/prometheus off the port a public route can reach (ADR 0024).
+global:
+  # Often enough to watch a load test take shape, rarely enough that the outbox gauge's query is nothing.
+  scrape_interval: 15s
+  external_labels:
+    env: local
+
+scrape_configs:
+  - job_name: wholestory
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:9080"]
+        labels: { service: api }
+      - targets: ["host.docker.internal:9081"]
+        labels: { service: ingest }
+      - targets: ["host.docker.internal:9082"]
+        labels: { service: processor }

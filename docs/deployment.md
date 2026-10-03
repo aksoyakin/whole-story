@@ -18,12 +18,15 @@ git push main ─► GitHub Actions ─► tests (Maven + Testcontainers, Playwr
 | `https://wholestory.world/api/event` | `ingest:8081` | Event collection; longer Traefik rule wins over the web route |
 | — | `api:8080` | Internal only; called by `web` on the Docker network (backend-for-frontend). Holds the user sessions in Redis (ADR 0018) |
 | — | PostgreSQL, Kafka, Redis | Internal only, no published ports. All three services talk to Kafka: ingest and api publish, processor and ingest consume |
+| `https://metrics.wholestory.world` | `grafana:3000` | Dashboards, behind Grafana's own login. Anonymous access and sign-up are both off |
+| — | `prometheus:9090` | Internal only and never routed: no authentication, and it holds per-site traffic volumes |
 | — | `api:9080`, `ingest:9081`, `processor:9082` | Internal only, and deliberately so: actuator runs on its own port per service, so `/actuator/health` and `/actuator/prometheus` cannot be reached through a public route (ADR 0024). Routing `ingest` must keep pointing at 8081 |
 
 ## One-time setup
 
 ### 1. DNS
-Point two `A` records at the VPS: `wholestory.world` and `app.wholestory.world`.
+Point three `A` records at the VPS: `wholestory.world`, `app.wholestory.world` and
+`metrics.wholestory.world` (the dashboards; step 4).
 
 ### 2. Container images
 CI pushes to GitHub Container Registry. New GHCR packages are private: either make the four
@@ -48,6 +51,7 @@ Create a **Compose** service:
   MAIL_USERNAME=<mailbox>
   MAIL_PASSWORD=<mailbox password>
   MAIL_FROM=<mailbox>
+  GRAFANA_ADMIN_PASSWORD=<a long random password>
   ```
 
   Database passwords are applied only when the PostgreSQL volume is first initialised.
@@ -61,9 +65,12 @@ Create a **Compose** service:
 | `web` | `wholestory.world` | `/` | 3000 |
 | `web` | `app.wholestory.world` | `/` | 3000 |
 | `ingest` | `wholestory.world` | `/api/event` (do not strip the path) | 8081 |
+| `grafana` | `metrics.wholestory.world` | `/` | 3000 |
 
-Nothing is routed to the management ports (`9080`–`9082`). Container healthchecks use them from inside the
-network; a route to them would publish traffic volumes per site.
+Nothing is routed to the management ports (`9080`–`9082`), and **Prometheus is never routed at all**: it has
+no authentication of any kind, and these series say how much traffic every tracked site gets. It is scraped
+from inside the network and read through Grafana, which has a login. Container healthchecks use the management
+ports from inside the network; a route to them would publish the same thing without even a password.
 
 
 ### 5. Continuous deployment

@@ -26,3 +26,4 @@
 | [0021](0021-password-reset-and-sending-mail.md) | Password reset, and how this product sends mail | Accepted |
 | [0022](0022-goals-and-conversion-rate.md) | Goals and the conversion rate | Accepted |
 | [0023](0023-deleting-the-data-of-a-removed-site.md) | Deleting the data of a removed site | Accepted |
+| [0024](0024-reading-the-metrics-the-services-record.md) | Reading the metrics the services record | Accepted |

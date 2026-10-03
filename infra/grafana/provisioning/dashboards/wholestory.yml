@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: wholestory
+    type: file
+    # Read-only in the UI on purpose: the file in the repository is the dashboard, and a change clicked into
+    # the container would be lost on the next start without anybody noticing.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

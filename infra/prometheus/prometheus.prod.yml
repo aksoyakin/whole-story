@@ -1,0 +1,20 @@
+# Production scrape configuration. Separate from the local file for one reason: the targets differ. Here the
+# services are containers on the internal network and are reached by name; locally they run on the host.
+#
+# Prometheus itself is never routed from the outside. It has no authentication of any kind, and these series
+# say how much traffic every tracked site gets. Only Grafana is published, behind its own login (ADR 0024).
+global:
+  scrape_interval: 15s
+  external_labels:
+    env: prod
+
+scrape_configs:
+  - job_name: wholestory
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api:9080"]
+        labels: { service: api }
+      - targets: ["ingest:9081"]
+        labels: { service: ingest }
+      - targets: ["processor:9082"]
+        labels: { service: processor }
