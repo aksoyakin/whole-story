@@ -7,6 +7,7 @@ import world.wholestory.api.identity.domain.PasswordResetToken;
 import world.wholestory.api.identity.domain.ResetTokenHash;
 import world.wholestory.api.shared.domain.UserId;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,5 +32,11 @@ class JpaPasswordResetTokenRepository implements PasswordResetTokenRepository {
         return tokens.findByUserIdAndUsedAtIsNull(userId.value()).stream()
                 .map(PasswordResetTokenJpaMapper::toDomain)
                 .toList();
+    }
+
+    /** Deleted in the database rather than loaded and removed one by one: nothing here needs the aggregate. */
+    @Override
+    public int deleteExpired(Instant cutoff) {
+        return tokens.deleteByExpiresAtBefore(cutoff);
     }
 }
