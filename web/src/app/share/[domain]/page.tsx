@@ -5,7 +5,14 @@ import { Dashboard } from "@/components/analytics/dashboard";
 import { parseFilters } from "@/lib/filters";
 import { parseMetric } from "@/lib/metrics";
 import { parsePeriod, toDateRange } from "@/lib/period";
-import { sharedBreakdown, sharedGoalConversions, sharedSite, sharedSummary, sharedTimeseries } from "@/lib/share";
+import {
+  sharedBreakdown,
+  sharedGoalConversions,
+  sharedRealtimeVisitors,
+  sharedSite,
+  sharedSummary,
+  sharedTimeseries,
+} from "@/lib/share";
 
 type Props = {
   params: Promise<{ domain: string }>;
@@ -44,11 +51,12 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
-  const [stats, points, goals, pages, sources, countries, regions, cities, browsers, systems, devices] =
+  const [stats, points, goals, onSiteNow, pages, sources, countries, regions, cities, browsers, systems, devices] =
     await Promise.all([
       sharedSummary(site.domain, range, filters),
       sharedTimeseries(site.domain, range, filters),
       sharedGoalConversions(site.domain, range, filters),
+      sharedRealtimeVisitors(site.domain),
       sharedBreakdown(site.domain, range, "PAGE", filters),
       sharedBreakdown(site.domain, range, "SOURCE", filters),
       sharedBreakdown(site.domain, range, "COUNTRY", filters),
@@ -74,6 +82,8 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
         metric={metric}
         filters={filters}
         interval={interval}
+        realtimeHref={`/api/share/${encodeURIComponent(site.domain)}/realtime`}
+        realtimeVisitors={onSiteNow}
         data={{
           summary: stats,
           points,

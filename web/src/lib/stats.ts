@@ -77,3 +77,13 @@ export async function breakdown(
 function withFilters(range: Range, filters: ActiveFilter[]): Query {
   return filters.length === 0 ? range : { ...range, filter: serialiseFilters(filters) };
 }
+
+/** How many people are on the site right now. Rendered once on the server; the client keeps it current. */
+export async function realtimeVisitors(siteId: string): Promise<number> {
+  const { data } = await api.GET("/api/sites/{siteId}/stats/realtime", {
+    params: { path: { siteId } },
+    headers: await sessionHeaders(),
+    cache: "no-store",
+  });
+  return data?.visitors ?? 0;
+}

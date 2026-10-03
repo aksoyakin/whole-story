@@ -8,7 +8,7 @@ import { goalConversions } from "@/lib/goals";
 import { parseMetric } from "@/lib/metrics";
 import { parsePeriod, toDateRange } from "@/lib/period";
 import { sitesOf } from "@/lib/sites";
-import { breakdown, summary, timeseries } from "@/lib/stats";
+import { breakdown, realtimeVisitors, summary, timeseries } from "@/lib/stats";
 
 export const metadata: Metadata = { title: "Dashboard · Whole Story" };
 
@@ -38,11 +38,12 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
-  const [stats, points, goals, pages, sources, countries, regions, cities, browsers, systems, devices] =
+  const [stats, points, goals, onSiteNow, pages, sources, countries, regions, cities, browsers, systems, devices] =
     await Promise.all([
       summary(siteId, range, filters),
       timeseries(siteId, range, filters),
       goalConversions(siteId, range, filters),
+      realtimeVisitors(siteId),
       breakdown(siteId, range, "PAGE", filters),
       breakdown(siteId, range, "SOURCE", filters),
       breakdown(siteId, range, "COUNTRY", filters),
@@ -77,6 +78,8 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
         metric={metric}
         filters={filters}
         interval={interval}
+        realtimeHref={`/api/sites/${siteId}/realtime`}
+        realtimeVisitors={onSiteNow}
         manageGoalsHref={`/sites/${siteId}/goals`}
         data={{
           summary: stats,

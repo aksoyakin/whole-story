@@ -76,3 +76,11 @@ export async function sharedGoalConversions(
 function withFilters(range: Range, filters: ActiveFilter[]) {
   return filters.length === 0 ? range : { ...range, filter: serialiseFilters(filters) };
 }
+
+export async function sharedRealtimeVisitors(domain: string): Promise<number> {
+  const { data } = await api.GET("/api/public/sites/{domain}/stats/realtime", {
+    params: { path: { domain } },
+    cache: "no-store",
+  });
+  return data?.visitors ?? 0;
+}

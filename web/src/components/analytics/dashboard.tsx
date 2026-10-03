@@ -3,6 +3,7 @@ import type React from "react";
 import { BreakdownCard } from "@/components/analytics/breakdown-card";
 import { type Chip, FilterChips } from "@/components/analytics/filter-chips";
 import { GoalsCard } from "@/components/analytics/goals-card";
+import { RealtimeVisitors } from "@/components/analytics/realtime-visitors";
 import { StatTiles } from "@/components/analytics/stat-tiles";
 import { TimeseriesTable } from "@/components/analytics/timeseries-table";
 import { VisitorsChart } from "@/components/analytics/visitors-chart";
@@ -41,6 +42,10 @@ type Props = {
   filters: ActiveFilter[];
   interval: Interval;
   data: DashboardData;
+  /** Where the browser asks for the current visitor count; the two dashboards have different route handlers. */
+  realtimeHref: string;
+  /** Server-rendered so the number is right on first paint. */
+  realtimeVisitors: number;
   /** Omitted on a shared dashboard, which is read-only: nobody holding the link may edit the goals. */
   manageGoalsHref?: string;
 };
@@ -58,6 +63,8 @@ export function Dashboard({
   filters,
   interval,
   data,
+  realtimeHref,
+  realtimeVisitors,
   manageGoalsHref,
 }: Props) {
   const link = (next: ActiveFilter[]) => href(basePath, period, metric, next);
@@ -87,23 +94,26 @@ export function Dashboard({
     <>
       <header className="flex flex-wrap items-center justify-between gap-4">
         {heading}
-        <nav className="flex gap-1 rounded-lg bg-muted p-1" aria-label="Period">
-          {PERIODS.map((option) => (
-            <Link
-              key={option}
-              href={href(basePath, option, metric, filters)}
-              aria-current={option === period ? "page" : undefined}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                option === period
-                  ? "bg-background font-medium shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {PERIOD_LABELS[option]}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex flex-wrap items-center gap-4">
+          <RealtimeVisitors href={realtimeHref} initial={realtimeVisitors} />
+          <nav className="flex gap-1 rounded-lg bg-muted p-1" aria-label="Period">
+            {PERIODS.map((option) => (
+              <Link
+                key={option}
+                href={href(basePath, option, metric, filters)}
+                aria-current={option === period ? "page" : undefined}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm transition-colors",
+                  option === period
+                    ? "bg-background font-medium shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {PERIOD_LABELS[option]}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </header>
 
       <FilterChips chips={chips} clearHref={href(basePath, period, metric, [])} />
