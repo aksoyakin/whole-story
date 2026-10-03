@@ -197,8 +197,11 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=30d
       # Nothing writes to Prometheus from outside and nobody opens its own UI: it is scraped from within this
-      # network and read through Grafana. Turning the admin API off removes the delete/snapshot endpoints.
-      - --web.enable-admin-api=false
+      # network and read through Grafana. This keeps the delete/snapshot endpoints off — it is also the
+      # default, and stated anyway so that enabling it later has to be a deliberate edit.
+      # The flag takes no value: --web.enable-admin-api=false is rejected at startup ("unexpected false"),
+      # because it is negatable rather than assignable.
+      - --no-web.enable-admin-api
     volumes:
       - ./prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
