@@ -25,6 +25,11 @@ export default async function SiteSettingsPage({ params }: Props) {
   // A zone stored under an older alias would otherwise vanish from its own select.
   const timezones = zones.includes(site.timezone) ? zones : [site.timezone, ...zones];
 
+  // Shared dashboards live on the marketing host (see proxy.ts); locally there is only one host to offer.
+  const marketingHost = process.env.MARKETING_HOST;
+  const sharePath = `/share/${encodeURIComponent(site.domain)}`;
+  const shareUrl = marketingHost ? `https://${marketingHost}${sharePath}` : sharePath;
+
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
       <header className="flex flex-col gap-1">
@@ -47,6 +52,7 @@ export default async function SiteSettingsPage({ params }: Props) {
             timezone={site.timezone}
             publicDashboard={site.publicDashboard}
             timezones={timezones}
+            shareUrl={shareUrl}
           />
         </CardContent>
       </Card>

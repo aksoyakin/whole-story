@@ -11,6 +11,8 @@ type Props = {
   siteId: string;
   timezone: string;
   publicDashboard: boolean;
+  /** Where the shared dashboard lives, shown once sharing is actually on. */
+  shareUrl: string;
   /** Every zone the server knows, resolved there so the list cannot differ from the one rendered here. */
   timezones: string[];
 };
@@ -27,7 +29,7 @@ type Props = {
  * The key stays off the form itself: remounting that would restart `useActionState` and discard the very
  * message the save had just produced.
  */
-export function SiteSettingsForm({ siteId, timezone, publicDashboard, timezones }: Props) {
+export function SiteSettingsForm({ siteId, timezone, publicDashboard, timezones, shareUrl }: Props) {
   const [state, submit, pending] = useActionState(updateSiteSettings, initial);
 
   return (
@@ -68,9 +70,16 @@ export function SiteSettingsForm({ siteId, timezone, publicDashboard, timezones 
           <Label htmlFor="publicDashboard">Public dashboard</Label>
         </div>
         <p className="text-muted-foreground text-xs">
-          Lets anyone holding the link read this site&apos;s dashboard. The shareable link itself is still being built;
-          until then this only records the choice.
+          Opens a read-only copy of this dashboard to anyone. The address is your domain, not a secret link, so treat it
+          as public rather than as something only the people you send it to can find.
         </p>
+        {publicDashboard && (
+          <p className="text-xs">
+            <a href={shareUrl} className="font-mono underline underline-offset-4" target="_blank" rel="noreferrer">
+              {shareUrl}
+            </a>
+          </p>
+        )}
       </div>
 
       {state.error && (

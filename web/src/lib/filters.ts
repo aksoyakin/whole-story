@@ -54,11 +54,21 @@ export function withoutFilter(filters: ActiveFilter[], dimension: Dimension): Ac
 }
 
 /**
- * What an empty value means in a breakdown. For a source it is not missing information: the classifier returns
- * nothing exactly when there is no external source to name — the address was typed or bookmarked, the referrer
- * was stripped, or the visitor was moving between pages of the tracked site (ADR 0015). Every other dimension
- * is genuinely undetermined when it comes back empty.
+ * What an empty value means in a breakdown, which is not the same thing for every dimension (D-130).
+ *
+ * For a source it is not missing information at all: the classifier returns nothing exactly when there is no
+ * external source to name — the address was typed or bookmarked, the referrer was stripped, or the visitor was
+ * moving between pages of the tracked site (ADR 0015).
+ *
+ * For a region or a city the country is known and nothing finer is: the address belongs to a VPN, to Apple
+ * Private Relay, or to a range the geo database only places at country level. That is the privacy tooling
+ * working rather than ours failing, and we refuse to guess, so the row says the data is not available instead
+ * of implying we lost it.
+ *
+ * Everything else really is undetermined, and says so in the words the rest of the industry uses.
  */
 export function absentLabel(dimension: Dimension): string {
-  return dimension === "SOURCE" ? "Direct / None" : "Unknown";
+  if (dimension === "SOURCE") return "Direct / None";
+  if (dimension === "REGION" || dimension === "CITY") return "Not available";
+  return "(not set)";
 }

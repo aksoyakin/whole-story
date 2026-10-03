@@ -11,14 +11,17 @@ const percent = new Intl.NumberFormat("en-US", { style: "percent", maximumFracti
  * The bar is scaled by the rate rather than by the largest row, because a rate is already a share of something:
  * a goal nobody completed should look empty, not merely shorter than its neighbour.
  */
-export function GoalsCard({ conversions, manageHref }: { conversions: GoalConversion[]; manageHref: string }) {
+/** `manageHref` is absent on a shared dashboard: whoever holds the link may read the goals, not change them. */
+export function GoalsCard({ conversions, manageHref }: { conversions: GoalConversion[]; manageHref?: string }) {
   return (
     <Card>
       <CardHeader className="flex flex-wrap items-center justify-between gap-3">
         <CardTitle className="font-normal text-muted-foreground text-sm">Goals</CardTitle>
-        <Link href={manageHref} className="text-muted-foreground text-sm underline underline-offset-4">
-          {conversions.length === 0 ? "Add a goal" : "Manage goals"}
-        </Link>
+        {manageHref && (
+          <Link href={manageHref} className="text-muted-foreground text-sm underline underline-offset-4">
+            {conversions.length === 0 ? "Add a goal" : "Manage goals"}
+          </Link>
+        )}
       </CardHeader>
       <CardContent>
         {conversions.length === 0 ? (

@@ -41,9 +41,15 @@ describe("absentLabel", () => {
     expect(absentLabel("SOURCE")).toBe("Direct / None");
   });
 
-  it("calls every other absent value unknown", () => {
-    expect(absentLabel("COUNTRY")).toBe("Unknown");
-    expect(absentLabel("CITY")).toBe("Unknown");
-    expect(absentLabel("BROWSER")).toBe("Unknown");
+  /** The country is known and nothing finer is; that is the geo database's limit, not lost data (D-130). */
+  it("says a region or city is not available rather than unknown", () => {
+    expect(absentLabel("REGION")).toBe("Not available");
+    expect(absentLabel("CITY")).toBe("Not available");
+  });
+
+  it("calls anything genuinely undetermined not set", () => {
+    expect(absentLabel("COUNTRY")).toBe("(not set)");
+    expect(absentLabel("BROWSER")).toBe("(not set)");
+    expect(absentLabel("DEVICE")).toBe("(not set)");
   });
 });
