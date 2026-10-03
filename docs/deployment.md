@@ -118,7 +118,7 @@ Without it `api` stops at startup with a Flyway error, which is the intended fai
 ## Kafka topics are created at startup
 
 Auto-creation is off on the broker, so every topic is declared as a `NewTopic` bean by the service that owns it:
-`raw-events` by `ingest`, `site-events` by `api` (ADR 0019). Those beans run once, while the application context
+`raw-events` by `ingest`, `site-events` and `site-purge` by `api` (ADR 0019, ADR 0023). Those beans run once, while the application context
 starts.
 
 Deleting a topic is therefore a two-step operation. A topic deleted while its owner is running is not recreated, and
@@ -140,9 +140,10 @@ truncate sites.sites, sites.goals, sites.ip_exclusions, sites.page_exclusions, i
 ```
 
 ```bash
-# kafka: drop both topics, including the compacted one that would otherwise replay old sites
+# kafka: drop all three, including the compacted ones that would otherwise replay old sites
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic raw-events
 /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic site-events
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --delete --topic site-purge
 
 # redis: sessionization state and the tracked-domain lookup, plus the user sessions
 redis-cli FLUSHALL
@@ -151,7 +152,7 @@ redis-cli FLUSHALL
 Then redeploy, which is what brings the topics back, and register again from the dashboard. Verify in this order:
 
 ```bash
-/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list   # both topics present
+/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list   # all three topics present
 redis-cli HGETALL sites:domains                                          # domain → the new site id
 ```
 

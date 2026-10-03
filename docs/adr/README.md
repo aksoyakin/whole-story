@@ -25,3 +25,4 @@
 | [0020](0020-reporting-queries.md) | Reporting queries, and the shape of the dashboard they feed | Accepted |
 | [0021](0021-password-reset-and-sending-mail.md) | Password reset, and how this product sends mail | Accepted |
 | [0022](0022-goals-and-conversion-rate.md) | Goals and the conversion rate | Accepted |
+| [0023](0023-deleting-the-data-of-a-removed-site.md) | Deleting the data of a removed site | Accepted |
