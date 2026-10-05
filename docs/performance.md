@@ -37,7 +37,7 @@ from production and all of them are visible in `infra/k6/docker-compose.loadtest
   whole machine. Three of those on an 8 GiB VM is a run that ends in `ExitOnOutOfMemoryError`, so each service
   was given a ceiling. Worth naming because the ceilings are mine and not the product's: api, idle throughout,
   sat at 494 MiB of the 768 MiB it was given.
-- **No reverse proxy.** Traefik and Cloudflare are not in the path, so the request latency below is the
+- **No reverse proxy.** Traefik is not in the path, so the request latency below is the
   service's and not a visitor's. It is also what lets one generator stand in for thousands of visitors: ingest
   takes the client address from `X-Forwarded-For`, and with nothing in front, the generator sets it. Through
   the production path it cannot — an event sent there with an invented address was counted and located under
@@ -196,5 +196,5 @@ once before starting, so an unregistered domain stops the run instead of produci
 - **The production server's capacity.** The VPS has far more memory and a different architecture.
 - **More than one ingest replica.** Horizontal scaling is the premise of ADR 0002 and is untested.
 - **The public path's capacity.** It was exercised in production at a trivial rate — 31 events through
-  Cloudflare and Traefik, all stored, all reported — but never loaded, and loading somebody's live service to
+  Traefik, all stored, all reported — but never loaded, and loading somebody's live service to
   find its ceiling is not a measurement worth the cost.
