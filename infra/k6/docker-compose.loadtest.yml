@@ -1,0 +1,91 @@
+# Overlay for a load test run, layered on top of the production stack:
+#
+#   docker compose -p wholestory-loadtest \
+#     -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.loadtest.yml up -d \
+#     postgres kafka redis ingest processor api prometheus
+#
+# The production file is the base on purpose: the services then run with the env, the healthchecks, the
+# dependency order and the JVM flags they run with in production, rather than with a development profile that
+# would make the numbers describe something nobody deploys. A separate project name is required — the
+# production file is also called `wholestory`, and without `-p` this would replace the containers used for
+# local development (D-147).
+#
+# Everything here is a deliberate deviation, and every one of them is listed in docs/performance.md:
+#
+#   pull_policy  the images are built locally. Production images are linux/amd64 (D-055) and this host is
+#                Apple Silicon, where they would only run under emulation — which measures the emulator.
+#                The Dockerfile is the same one CI uses, so the artifact differs only in architecture.
+#   memory       production sets no limit, so a JVM with MaxRAMPercentage=75 sizes its heap against the whole
+#                machine. Three of those on an 8 GB Docker VM is a run that ends in ExitOnOutOfMemoryError
+#                rather than a measurement, so each service is given a ceiling it is measured under.
+#   cpus (k6)    the generator shares this machine with the services. Capping it keeps it from starving the
+#                thing being measured; if the cap stops it reaching the target rate it says so, loudly, as
+#                dropped_iterations — which is the one number that invalidates a run. Four of the host's ten
+#                cores, which is what it took to offer 8000 events a second; two were not enough and the
+#                run reported the generator's queueing as the service's latency.
+#   ports        api and Prometheus are published so the run can be set up and read from the host. Nothing is
+#                published in production (D-048).
+
+name: wholestory
+
+services:
+  postgres:
+    mem_limit: 1280m
+    ports:
+      - "15432:5432"
+
+  kafka:
+    mem_limit: 1024m
+
+  redis:
+    mem_limit: 256m
+
+  ingest:
+    image: ${IMAGE_PREFIX:-wholestory-local}-ingest:${IMAGE_TAG:-latest}
+    pull_policy: never
+    mem_limit: 1024m
+    ports:
+      - "18081:8081"
+      - "19081:9081"
+
+  processor:
+    image: ${IMAGE_PREFIX:-wholestory-local}-processor:${IMAGE_TAG:-latest}
+    pull_policy: never
+    mem_limit: 1280m
+    ports:
+      - "19082:9082"
+
+  api:
+    image: ${IMAGE_PREFIX:-wholestory-local}-api:${IMAGE_TAG:-latest}
+    pull_policy: never
+    mem_limit: 768m
+    ports:
+      - "18080:8080"
+      - "19080:9080"
+
+  prometheus:
+    mem_limit: 512m
+    ports:
+      - "19090:9090"
+
+  # Runs inside the stack's own network: the load then does not cross the host's NAT, and what is measured is
+  # the service rather than Docker's port forwarding. Started on demand (`run`), not with the stack.
+  k6:
+    image: grafana/k6:1.3.0
+    profiles: ["load"]
+    mem_limit: 1g
+    cpus: "4.0"
+    networks: [internal]
+    volumes:
+      # Relative to the project directory, which is infra/ because the production file is given first — and it
+      # has to stay infra/, since that file's own ./postgres/init and ./prometheus paths resolve the same way.
+      - ./k6:/work:rw
+    working_dir: /work
+    environment:
+      BASE_URL: http://ingest:8081
+      DOMAIN: ${LOADTEST_DOMAIN:-loadtest.example}
+      RATE: ${RATE:-500}
+      DURATION: ${DURATION:-2m}
+      # VISITORS is deliberately not defaulted here: the script derives it from the rate, and a value set at
+      # this level would win over that and quietly reintroduce the variable it exists to remove.
+    entrypoint: ["k6", "run", "write-path.js"]

@@ -34,3 +34,6 @@ next-env.d.ts
 logs/
 test-results/
 playwright-report/
+
+# Load test runs (the numbers that matter are written up in docs/performance.md)
+infra/k6/results/
