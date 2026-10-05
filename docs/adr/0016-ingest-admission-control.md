@@ -28,6 +28,12 @@ source to make a site's numbers wrong. Inflated numbers are worse than missing o
 ## Consequences
 - The rate limit runs after the site lookup and the visitor hash, because it needs that hash. It is therefore not
   the cheapest possible rejection; that is the trade-off for not punishing visitors who share an address.
+- The bucket depends on the client address, which ingest reads from `X-Forwarded-For`. That header is only
+  trustworthy because a reverse proxy sets it: measured against production, an event sent with an invented
+  `X-Forwarded-For` was counted under the real client address and located there, so the header a caller writes
+  reaches neither the visitor hash nor the GeoIP lookup. It follows that ingest must never be reachable except
+  through that proxy — and that a load generator can only stand in for many visitors where there is no proxy,
+  which is why the local measurement in `docs/performance.md` can do it and nobody else can.
 - An attacker who varies the User-Agent gets a fresh bucket for every variation. The limit raises the cost of
   inflating a site's numbers, it does not remove it. A per-site cap belongs with the monthly event limits of
   Site Management, where an organization's plan is known.
