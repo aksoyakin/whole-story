@@ -22,20 +22,25 @@ public class BatchPersister {
     private final SessionWriter sessionWriter;
     private final RollupWriter rollupWriter;
 
+    /**
+     * @return the events this call actually stored, in arrival order; empty for a batch that had all been seen
+     *         before. Returned rather than counted because everything derived from a batch has to be derived
+     *         from these and not from what arrived: the caller has its own derivation to do.
+     */
     @Transactional
-    public int persist(List<SessionizedEvent> events) {
+    public List<SessionizedEvent> persist(List<SessionizedEvent> events) {
         if (events.isEmpty()) {
-            return 0;
+            return List.of();
         }
         Set<UUID> inserted = eventWriter.insert(events);
         List<SessionizedEvent> fresh = events.stream()
                 .filter(e -> inserted.contains(e.event().eventId()))
                 .toList();
         if (fresh.isEmpty()) {
-            return 0;
+            return List.of();
         }
         sessionWriter.upsert(fresh);
         rollupWriter.apply(fresh);
-        return fresh.size();
+        return fresh;
     }
 }

@@ -215,6 +215,47 @@ class EventProcessingIntegrationTest {
                 assertThat(onSiteNow(siteId)).isEqualTo(2L));
     }
 
+    /**
+     * The regression the load test found. Re-reading the topic used to put every visitor in history back into
+     * this set, because the recorder was handed the whole batch and scored each member with the time it ran;
+     * a rewound consumer group took a counter that had been cleared to zero up to 80,000. The score is the
+     * event's own time now, so an event from outside the window is trimmed the moment it is written.
+     */
+    @Test
+    void doesNotCountVisitorsWhoseEventsAreTooOldToBeHereNow() {
+        UUID siteId = UUID.randomUUID();
+        Instant longAgo = Instant.now().truncatedTo(ChronoUnit.SECONDS).minus(Duration.ofMinutes(20));
+
+        send(List.of(
+                event(siteId, "pageview", "/", longAgo, CHROME_MAC, 80L),
+                event(siteId, "pageview", "/docs", longAgo.plusSeconds(5), CHROME_MAC, 81L)));
+
+        // The rows arrive either way: an event from twenty minutes ago is stored like any other.
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(2));
+        assertThat(onSiteNow(siteId)).isZero();
+    }
+
+    /**
+     * The other half of the same fix. Scoring by event time is only safe if a score cannot move backwards:
+     * otherwise an old event arriving late would drag a visitor who really is here into the past, and the
+     * trim that follows would remove somebody who is present. {@code ZADD GT} is what prevents it.
+     */
+    @Test
+    void aLateEventDoesNotRemoveAVisitorWhoIsHereNow() {
+        UUID siteId = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        send(List.of(event(siteId, "pageview", "/", now, CHROME_MAC, 90L)));
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> assertThat(onSiteNow(siteId)).isEqualTo(1L));
+
+        // The same visitor, an event from twenty minutes ago that only reaches us now.
+        send(List.of(event(siteId, "pageview", "/docs", now.minus(Duration.ofMinutes(20)), CHROME_MAC, 90L)));
+        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(count("select count(*) from analytics.events where site_id = ?", siteId)).isEqualTo(2));
+        assertThat(onSiteNow(siteId)).isEqualTo(1L);
+    }
+
     private long onSiteNow(UUID siteId) {
         Long counted = redis.opsForZSet()
                 .count(RealtimeVisitorKeys.forSite(siteId), Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);

@@ -2,6 +2,7 @@ package world.wholestory.processor.realtime;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisZSetCommands.ZAddArgs;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -38,17 +39,29 @@ public class RealtimeVisitorRecorder {
     private final StringRedisTemplate redis;
     private final Clock clock;
 
-    /** {@code events} have already been through the bot filter; replays are harmless, since a visitor is a member. */
+    /**
+     * {@code events} are the ones the batch actually stored, already past the bot filter.
+     * <p>
+     * The score is the event's own timestamp rather than the moment this runs, and that is what makes a replay
+     * harmless: a re-read of the topic scores every member where it belongs in the past, and the trim below
+     * takes it straight back out. Scoring with the processing time instead put the whole history onto the page
+     * as people who were there right now — measured, a rewind took a cleared counter to 80,000 — and it also
+     * made a consumer that had fallen behind report visitors from minutes ago as present.
+     * <p>
+     * Written with {@code GT} so a score can only move forward. Without it a late or replayed event would drag
+     * a visitor who really is here back into the past, and the trim would then remove somebody present.
+     */
     public void record(List<SessionizedEvent> events) {
         if (events.isEmpty()) {
             return;
         }
-        long now = clock.instant().getEpochSecond();
-        double dropBefore = (double) now - KEPT.toSeconds();
+        // The window belongs to the clock, not to the data: what is kept is the last ten minutes of real time.
+        double dropBefore = (double) clock.instant().getEpochSecond() - KEPT.toSeconds();
         redis.executePipelined((RedisCallback<Object>) connection -> {
             for (SessionizedEvent event : events) {
                 byte[] key = RealtimeVisitorKeys.forSite(event.event().siteId()).getBytes(StandardCharsets.UTF_8);
-                connection.zSetCommands().zAdd(key, now, member(event));
+                connection.zSetCommands()
+                        .zAdd(key, event.event().timestamp().getEpochSecond(), member(event), ZAddArgs.empty().gt());
                 // Bounded on write rather than swept later: a busy site would otherwise grow a set nobody trims.
                 connection.zSetCommands().zRemRangeByScore(key, Double.NEGATIVE_INFINITY, dropBefore);
                 // A site that stops receiving events should not leave a key behind for ever.
