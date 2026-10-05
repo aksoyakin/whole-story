@@ -30,7 +30,8 @@ import world.wholestory.api.shared.domain.UserId;
 
 /**
  * Sign-up and sign-in. Only the Next server calls these; the browser never reaches api directly
- * (see ADR 0011 and ADR 0018). Logging out is handled by Spring Security's logout filter.
+ * (see ADR 0011 and ADR 0018). Signing out is an endpoint here rather than Spring Security's logout filter,
+ * for the reason noted on {@code logoutHandler}.
  */
 @RestController
 @RequestMapping("/api/auth")
