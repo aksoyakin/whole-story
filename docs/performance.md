@@ -253,24 +253,45 @@ most expensive thing in the system. At 30 days they are 235 and 254 ms, below ev
 filter naming one page or one entry page is highly selective — the work the semi-join avoids outweighs the
 work it adds.
 
-### The gap between the two halves, which is not explained
+### The gap between the two halves, and what it turned out to be
 
-The database says 6.6 seconds for a 30-day render and the HTTP measurement says 17.4. That gap is real,
-reproduced across three passes, and currently unexplained, so it is recorded rather than attributed.
+The database said 6.6 seconds for a 30-day render and the HTTP measurement said 17.4. Chasing that down found
+something worth more than the number.
 
-The obvious suspect was cache: the end-to-end run walks all four periods in one loop, so by the time it
-reaches 30 days a 12-month sweep has just evicted everything. Measured and ruled out — re-running the SQL
-timings immediately after that sweep gave 6,611 ms against the 6,637 ms measured before it, which is the same
-number. Two things remain. The row above prices seven breakdown cards at the source card's cost, and the real
-cards include city and region, which group over far more distinct values; that makes the summed figure an
-underestimate by an unknown amount. And the per-endpoint gap is not uniform — it is widest on the *cheapest*
-query, where the summary goes from 332 ms of database work to 971 ms end to end, while the page breakdown
-goes from 1,975 to 3,573 — which looks more like a fixed cost per request than a proportional one. Half a
-second of fixed overhead on a request whose work is a single indexed site lookup is not a thing to guess
-about, so it is the next question rather than a conclusion here.
+**The api's own overhead is about ten milliseconds.** Logging every statement for one request shows the whole
+of what it does: `BEGIN READ ONLY` at 0.025 ms, the site lookup that decides whether the dashboard is shared
+at 0.078 ms, `COMMIT` at 0.009 ms, and the report query. Subtract the query from the HTTP total and roughly
+ten milliseconds remain for Spring, JDBC, Jackson and the round trip. There is no extra layer to pay for.
 
-What survives either way: the ordering of the queries, the shape of the growth with the period, and the fact
-that the default period costs seconds rather than milliseconds.
+**The summary query really is twice as slow in production as any hand measurement said, and the cause is the
+plan cache.** The pgjdbc driver switches to a server-side named prepared statement after five executions —
+the log shows `execute S_3` rather than `execute <unnamed>` — and PostgreSQL then builds a generic plan and
+keeps it. For this statement the generic plan is about twice the cost. Measured by changing one setting and
+nothing else:
+
+| `plan_cache_mode` | summary, 30 days, end to end |
+|---|---|
+| `force_custom_plan` | 390 ms |
+| `auto` (the default, and production) | 750 ms |
+
+The penalty is specific to that statement. The page breakdown, the goals and the timeseries measure the same
+under both settings, and their end-to-end cost matches their SQL cost almost exactly — 1.9 s against 1.98 s,
+1.40 s against 1.38 s, 0.61 s against 0.55 s.
+
+**That makes the method above wrong in a way worth naming.** Timing a statement through psql's `\bind`, which
+is what the timings harness does, always uses an unnamed statement and therefore always gets a custom plan.
+Every hand-measured number in this document is the better of two plans, and production stops using it after
+the fifth request. The remedy is one line — `plan_cache_mode = force_custom_plan` on the role, or
+`prepareThreshold=0` on the JDBC URL — and planning this query costs 2.3 ms against hundreds of milliseconds
+of execution, so it looks cheap. It is not applied here: a change to how every statement in the service is
+planned deserves its own before and after rather than a footnote in somebody else's measurement.
+
+**What is left of the gap is the run's own shape.** The summed row prices seven breakdown cards at the source
+card's cost; measured individually they come to about 2.9 seconds rather than 2.4, since region and city group
+over more values. The rest is contention: the end-to-end run walks all four periods in one loop, so a
+twelve-month sweep is still settling when the thirty-day requests arrive. Cache was ruled out — re-running the
+SQL timings right after that sweep gave 6,611 ms against 6,637 ms before it — but an idle cache is not an idle
+system, and that distinction is the one this measurement got wrong first.
 
 ### Two mistakes in the measuring, both of which read as good news
 
