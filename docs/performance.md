@@ -1,21 +1,24 @@
 # Performance
 
-Measured numbers for the write path, and how to get them again. Nothing here is estimated: every figure below
-came out of a run that can be repeated with two scripts in this repository.
+Measured numbers, and how to get them again. Nothing here is estimated: every figure below came out of a run
+that can be repeated with the scripts in this repository.
 
-## What was measured
+Two halves, measured separately because they fail differently. The write path is about keeping up with
+traffic, and it does. The read path is about answering a question about history, and that is where the numbers
+stop being comfortable.
 
-The write path only — `tracker → ingest → Kafka → processor → PostgreSQL`. Throughput on its own would be a
-weak claim, so each run answers four questions at once:
+## What was measured, part one: the write path
+
+`tracker → ingest → Kafka → processor → PostgreSQL`. Throughput on its own would be a weak claim, so each run
+answers four questions at once:
 
 1. How many events a second does ingest accept, and how long does a request take?
 2. Does the processor keep up, or does a backlog build?
 3. Does everything that was accepted end up stored?
 4. Does reading the topic a second time change any of the stored numbers (ADR 0006)?
 
-Dashboard query latency is **not** measured here. It depends almost entirely on how much data the database
-holds, so it needs a realistic corpus seeded first; until that exists, a number would describe an empty table.
-That is a separate exercise.
+Dashboard query latency is the second half, further down. It depends almost entirely on how much data the
+database holds, so it needed a corpus seeded first.
 
 ## The machine
 
@@ -45,7 +48,7 @@ from production and all of them are visible in `infra/k6/docker-compose.loadtest
 - **The generator shares the machine.** It took about 1.5 cores of the 10 at the highest rate.
 - **Docker Desktop's file I/O** is slower than a Linux host's, which is a penalty on PostgreSQL and Kafka.
 
-## Results
+## Results: the write path
 
 Each run holds one fixed arrival rate for two minutes, after a 30 second warmup at a tenth of it. A series of
 plateaus rather than one ramp: in a ramp the rate and the latency move together, so the result cannot answer
@@ -111,7 +114,7 @@ Two smaller things fell out of the same numbers. The consumer group's lag after 
 exactly the number of stored events — every record on the topic has a row. And `page_hourly` plus
 `custom_event_hourly` sum to 4,279,247 as well, so the rollups agree with the events they were built from.
 
-## What the test found
+## What the write-path test found
 
 **The realtime visitor count is inflated by a replay.** The key was cleared to zero before the rewind; after
 the topic had been read again it held 80,000 members — every visitor of the last run, counted as being on the
@@ -147,7 +150,150 @@ by putting the old behaviour back and watching it fail. Worth noting that the co
 its own documentation — both `RealtimeVisitorKeys` and the data flow notes already said the score was the
 second the visitor was last seen.
 
+## What was measured, part two: the read path
+
+The queries behind the dashboard, against a corpus with two years of history. One question drives it, and it
+is one the architecture already wrote down and never answered: [ADR 0007](adr/0007-events-sessions-and-additive-rollups.md)
+counts unique visitors exactly, with `COUNT(DISTINCT)` over sessions, because visitors are not additive and no
+rollup can hold them — and it says HyperLogLog sketches are the next step, "adopted on evidence rather than up
+front". This is that evidence. Two more written claims were measured along the way, and both turned out to be
+the wrong way round.
+
+### The corpus
+
+Produced by `infra/k6/seed-analytics.sql`, because the load generator cannot produce it: ingest stamps the
+event time from the server clock (D-027), so k6 can only ever write "now", and a question about the last month
+asked of twenty minutes of traffic reads almost nothing.
+
+| | |
+|---|---|
+| events | 49,341,165 |
+| sessions | 16,666,656 |
+| hourly page rollup | 11,139,394 rows |
+| span | 24 months, ending today |
+| sites | one main site holding 90% of it, two neighbours |
+| on disk | 15 GB of events, 5 GB of sessions, 21 GB of database |
+
+Two details of the shape matter more than the size. **Visitor hashes are unique per site per day**, because
+production rotates the salt daily (ADR 0005) and the same person is a different hash tomorrow — so "unique
+visitors over 30 days" is close to the sum of thirty daily figures, and the distinct count is correspondingly
+large. Modelling a visitor as stable across the period would have made every `COUNT(DISTINCT)` far cheaper
+than the real one. And **the dimensions are skewed, not uniform**: the busiest page takes 12.6% of pageviews,
+which is what a breakdown ordering by visitors actually faces.
+
+The corpus is checked rather than assumed. Events are generated from sessions and the rollups aggregated from
+the events, and six invariants are verified afterwards: no event without a session, `pageviews` and `events`
+agreeing with the rows that exist, both rollups equal to a count over the events, and no visitor hash spanning
+more than one day. The semi-join filters reach events through `session_id`, so incoherent ids would have
+measured an empty result.
+
+### The method
+
+Each statement runs five times and the **median** is the number, with the spread shown next to it. A single
+`EXPLAIN ANALYZE` is not a measurement here: back to back, the same statement came out at 2216, 3521 and
+2348 ms — the run-to-run spread was wider than the differences being looked for. With medians the spread is
+2–5% on most statements.
+
+**Postgres is left exactly as production runs it**, which is the official image with no settings of its own:
+`shared_buffers` 128 MB, `work_mem` 4 MB. That is a deliberate choice and not an omission. A number from a
+tuned database would describe a deployment nobody has, and as it turns out the untuned setting is a finding in
+its own right rather than an excuse.
+
+### Results
+
+Milliseconds of database work, main site, median of five runs. "One render" is what a single dashboard page
+asks for: a summary, a timeseries, the goals and eight breakdowns.
+
+| | today | 7 days | 30 days | 12 months |
+|---|---:|---:|---:|---:|
+| breakdown: page, from events (D-098) | 124 | 603 | **1,975** | **18,549** |
+| goals, two goals in one pass (D-125) | 94 | 526 | **1,384** | **13,876** |
+| timeseries, daily buckets (ADR 0020) | 39 | 218 | 551 | 4,830 |
+| breakdown: source, from sessions | 41 | 232 | 342 | 3,728 |
+| summary, no filter | 30 | 122 | 332 | 2,996 |
+| summary, one filter (D-103) | 35 | 157 | 296 | 4,916 |
+| semi-join: visits by page (D-104) | 22 | 105 | 254 | 4,498 |
+| semi-join: events by entry page (D-104) | 29 | 111 | 235 | 6,376 |
+| **one render, summed** | **575** | **3,093** | **6,637** | **66,345** |
+
+The last row sums the queries a render issues, with the seven session-backed breakdown cards priced at the
+source card's cost. Measured end to end through api instead — the same page, twelve real HTTP requests, median
+of three passes — a render is **961 ms / 5,421 ms / 17,402 ms / 170,721 ms** for the same four periods.
+
+### What the measurement found
+
+**Today is fine and the default is not.** A day costs 575 ms of database work and nobody will notice it. The
+period the dashboard opens on is 30 days, and that costs **6.6 seconds** — issued as twelve concurrent
+requests, so the wall clock is better than the sum, but the database is asked for 6.6 seconds of work either
+way and it does not have twelve spare cores. A one-year custom range costs **66 seconds**, and `scope.md` puts
+custom ranges in v1.
+
+**Half of every total is two queries.** The page breakdown and the goals both group over events and both do a
+`COUNT(DISTINCT)`; between them they are 3.4 of the 6.6 seconds at 30 days. The remaining seven breakdown
+cards read sessions at 342 ms each, which is the other half. No single card is the problem; the page is.
+
+**ADR 0007's question is still open, and the reason has changed.** The cost is not the distinct count in
+itself — it is the number of rows reached to compute it. The plan seq-scans the partitions rather than using
+`(site_id, started_at)`, correctly: the main site is 90% of the table, so the index offers no selectivity, and
+30 days means 1.4 million session rows scanned to produce 979,278 for the distinct count. Raising `work_mem`
+from production's 4 MB to 64 MB stops the sort spilling to disk (28 MB of temp files at 30 days, 139 MB for
+the goals) and buys **15–25%**, then plateaus. So sketches would only pay if they were pre-aggregated into the
+hourly rollup, turning a million-row scan into around 720 rows — which is a different and much larger change
+than "adopt HyperLogLog", and the measurement is what makes that visible.
+
+**D-103 is inverted at this cardinality.** The design says filtering costs more, because the rollup holds no
+dimension beyond the page and a filtered pageview count has to come from the events instead. Measured, the
+filtered summary is *faster* at 30 days — 296 ms against 332 ms. The hourly rollup is one row per
+`(site, hour, path)`, and with 500 paths that is 344,000 rows for 30 days, so reading it is not cheaper than
+counting events the filter has already narrowed. The rollup earns its place only where path cardinality is
+low. At 12 months the order flips back the expected way, and by then both numbers are unusable.
+
+**D-104's semi-joins are the cheapest shapes measured, not the dearest.** The source comments called them the
+most expensive thing in the system. At 30 days they are 235 and 254 ms, below every other query, because a
+filter naming one page or one entry page is highly selective — the work the semi-join avoids outweighs the
+work it adds.
+
+### The gap between the two halves, which is not explained
+
+The database says 6.6 seconds for a 30-day render and the HTTP measurement says 17.4. That gap is real,
+reproduced across three passes, and currently unexplained, so it is recorded rather than attributed.
+
+The obvious suspect was cache: the end-to-end run walks all four periods in one loop, so by the time it
+reaches 30 days a 12-month sweep has just evicted everything. Measured and ruled out — re-running the SQL
+timings immediately after that sweep gave 6,611 ms against the 6,637 ms measured before it, which is the same
+number. Two things remain. The row above prices seven breakdown cards at the source card's cost, and the real
+cards include city and region, which group over far more distinct values; that makes the summed figure an
+underestimate by an unknown amount. And the per-endpoint gap is not uniform — it is widest on the *cheapest*
+query, where the summary goes from 332 ms of database work to 971 ms end to end, while the page breakdown
+goes from 1,975 to 3,573 — which looks more like a fixed cost per request than a proportional one. Half a
+second of fixed overhead on a request whose work is a single indexed site lookup is not a thing to guess
+about, so it is the next question rather than a conclusion here.
+
+What survives either way: the ordering of the queries, the shape of the growth with the period, and the fact
+that the default period costs seconds rather than milliseconds.
+
+### Two mistakes in the measuring, both of which read as good news
+
+Worth writing down because both produced a plausible number rather than an error.
+
+**`select count(*) from (<query>)` lets the planner skip the query.** It is the obvious way to run a statement
+and discard its rows. But nothing outside the subquery references its aggregates, and an aggregate with no
+`GROUP BY` returns one row whatever the data, so the planner stops computing them: four of the eight
+statements reported **0 ms**, including two measured at 332 and 1,384 ms moments earlier. Only the ones with a
+`GROUP BY` were honest, because there the row count depends on the data. The harness now casts each row to
+text, which forces every output column.
+
+**A lateral subquery that references nothing is evaluated once.** The corpus seeder drew its random values in
+a `LATERAL` that depended on no outer column, so it had no lateral dependency and was evaluated a single time
+per statement — every one of the thirty thousand visits in a chunk came out identical, same day, same page,
+same country. Nothing complained. The shape check is what caught it: two distinct paths in the whole corpus.
+Before that, the same seeder matched zero rows for a while because the pool lookups were written as
+`where i = floor(random() * n)`, and `random()` is volatile, so each pool row was compared against its own
+fresh number.
+
 ## Reproducing this
+
+### Reproducing the write path
 
 From the repository root, with Docker running and `infra/geoip/GeoLite2-City.mmdb` present:
 
@@ -190,9 +336,51 @@ events a minute (ADR 0016), so a pool too small for the rate would spend the run
 works out the arithmetic in `setup()` and fails with the pool size it would need. It also probes the endpoint
 once before starting, so an unregistered domain stops the run instead of producing a summary of `400`s.
 
+### Reproducing the read path
+
+```bash
+# 1. Bring up the stack. processor is started for its migrations: it owns the analytics schema and the
+#    api_* views api reads (D-012), and applying those by hand is what drifted a database once (D-145).
+docker network create dokploy-network
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml \
+  up -d postgres kafka redis processor api prometheus
+
+# 2. Seed the corpus. Around eight minutes for fifty million events, plus the vacuum.
+#    Check the shape it prints at the end before trusting anything measured on it.
+infra/k6/seed-analytics.sh 24 45000000 2500000 2
+
+# 3. Measure. Only Postgres is needed for this, and on a machine this size the idle JVMs are worth
+#    stopping first — one sweep was killed by the host running out of memory with them running.
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml stop api processor kafka prometheus
+infra/k6/read-path-timings.sh today
+infra/k6/read-path-timings.sh 7d
+infra/k6/read-path-timings.sh 30d
+REPS=3 infra/k6/read-path-timings.sh 12m
+
+# 4. Ask why, once a number is worth explaining. This one prints plans instead of timings.
+infra/k6/read-path-queries.sh 30d
+
+# 5. The same with one setting changed, which is the only honest way to attribute a difference to it.
+WORK_MEM=64MB infra/k6/read-path-timings.sh 30d
+
+# 6. Tear it down.
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml down -v
+docker network rm dokploy-network
+```
+
+The seeder truncates `analytics` before it starts, because its primary keys come from a counter that restarts
+at zero and a second run would collide rather than add. It is the one script in this repository allowed to
+write into that schema directly, and only because it is a measurement rig on a local machine: in production
+schema ownership is the boundary (D-012, D-037).
+
 ## Not measured yet
 
-- **Dashboard query latency**, which needs a seeded corpus first.
+- **Where the read path's HTTP overhead comes from.** It was measured and it is not small — a 30-day render
+  costs 6.6 seconds of database work and 17.4 seconds end to end — but the cause is not established, and the
+  summed figure it is compared against prices seven of the breakdown cards by proxy.
 - **The production server's capacity.** The VPS has far more memory and a different architecture.
 - **More than one ingest replica.** Horizontal scaling is the premise of ADR 0002 and is untested.
 - **The public path's capacity.** It was exercised in production at a trivial rate — 31 events through

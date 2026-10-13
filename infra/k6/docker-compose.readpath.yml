@@ -1,0 +1,89 @@
+# Overlay for measuring the read side, layered on top of the production stack:
+#
+#   docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+#     -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml up -d \
+#     postgres kafka redis processor api prometheus
+#
+# Same reasoning as the write-path overlay: the production file is the base so the services run with the env,
+# the healthchecks, the dependency order and the JVM flags they actually run with, and a separate project name
+# is required because the production file is also called `wholestory` (D-147).
+#
+# The schema is created by letting Flyway run, which is why `processor` is started even though it has nothing
+# to consume here: it owns the analytics schema and the api_* views api reads (D-012). Applying those
+# migrations by hand is what drifted the local database once before (D-145).
+#
+# Deviations from production, all of them listed in docs/performance.md:
+#
+#   pull_policy    images are built locally; production images are linux/amd64 (D-055) and this host is
+#                  Apple Silicon, where they would only run under emulation.
+#   memory         production sets no limit anywhere. Here the host's VM has to hold the whole stack, and for
+#                  a *read* measurement the split matters more than it did for the write path: what a query
+#                  costs depends on what is already in cache. Postgres is therefore given most of what is
+#                  available and everything else is kept small, and the write-up reports cold and warm
+#                  separately rather than pretending one number covers both.
+#   max_wal_size   raised for seeding only. Writing fifty million rows with the default 1 GB checkpoints
+#                  constantly, which makes seeding slow; it has no effect on reads, which is what is measured.
+#   ports          postgres, api and Prometheus are published so the corpus can be seeded and the run read
+#                  from the host. Nothing is published in production (D-048).
+#
+# Postgres is otherwise left completely untuned, and that is the point rather than an omission: production
+# runs the official image with no settings of its own, so shared_buffers is 128 MB and work_mem is 4 MB. A
+# measurement against a tuned database would describe a deployment nobody has.
+
+name: wholestory
+
+services:
+  postgres:
+    mem_limit: 4096m
+    # Seeding only. Checkpoint pressure is a write concern and cannot flatter a read.
+    command:
+      - postgres
+      - -c
+      - max_wal_size=4GB
+    ports:
+      - "25432:5432"
+
+  kafka:
+    mem_limit: 640m
+
+  redis:
+    mem_limit: 192m
+
+  # Idle throughout: started for its migrations, then kept running only because api waits for it to be
+  # healthy. Nothing is produced to raw-events during a read measurement.
+  processor:
+    image: ${IMAGE_PREFIX:-wholestory-local}-processor:${IMAGE_TAG:-latest}
+    pull_policy: never
+    mem_limit: 640m
+    ports:
+      - "29082:9082"
+
+  api:
+    image: ${IMAGE_PREFIX:-wholestory-local}-api:${IMAGE_TAG:-latest}
+    pull_policy: never
+    mem_limit: 768m
+    ports:
+      - "28080:8080"
+      - "29080:9080"
+
+  prometheus:
+    mem_limit: 320m
+    ports:
+      - "29090:9090"
+
+  # Reads through api rather than through the Next app: the SQL is identical either way, and this keeps the
+  # BFF's rendering out of a number that is about the read side. Started on demand (`run`), not with the stack.
+  k6:
+    image: grafana/k6:1.3.0
+    profiles: ["load"]
+    mem_limit: 512m
+    cpus: "2.0"
+    networks: [internal]
+    volumes:
+      # Relative to the project directory, which is infra/ because the production file is given first.
+      - ./k6:/work:rw
+    working_dir: /work
+    environment:
+      BASE_URL: http://api:8080
+      DOMAIN: ${READPATH_DOMAIN:-readpath.example}
+    entrypoint: ["k6", "run", "read-path.js"]
