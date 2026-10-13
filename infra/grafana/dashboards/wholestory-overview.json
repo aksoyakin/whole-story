@@ -8,7 +8,7 @@
   "timezone": "browser",
   "editable": false,
   "schemaVersion": 41,
-  "version": 2,
+  "version": 3,
   "refresh": "10s",
   "time": {
     "from": "now-1h",
@@ -705,6 +705,65 @@
           "mode": "multi",
           "sort": "desc"
         }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "How long each service has been running",
+      "description": "Which containers the last deploy actually replaced. CI stopped rebuilding an image a push did not change (ADR 0012), so leaving a container alone is now a deliberate outcome rather than luck — and a deploy that quietly replaced all of them would mean the change detection broke, which nothing else on this dashboard would say. Read it as a comparison and not as a level: the service that was actually deployed shows minutes while the others keep whatever they had. There is no good or bad number here, which is why none of them is coloured. First read this way: ingest 11 minutes, api and processor 8 days.",
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "process_uptime_seconds",
+          "legendFormat": "{{service}}",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     }
   ]
