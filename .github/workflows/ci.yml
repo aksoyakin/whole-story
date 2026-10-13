@@ -11,6 +11,12 @@ on:
     paths-ignore:
       - "**/*.md"
       - "docs/**"
+      # The measurement rig: k6 scenarios, the corpus seeder and the compose overlays they run under.
+      # Nothing in CI reads any of it — Biome's scope is tracker, web and the root JSON files, and asking it
+      # to check a file in here answers "no files were processed" — nothing in here reaches an image, and the
+      # deploy-time list below does not match it either. A change to how something is measured should not
+      # replace the thing being measured.
+      - "infra/k6/**"
   pull_request:
 
 permissions:
