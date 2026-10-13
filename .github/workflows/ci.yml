@@ -3,6 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    # A push that changes nothing a container runs must not restart one. Every deploy takes Traefik's
+    # route to ingest down for about nineteen seconds, and the events that arrive in that window are
+    # lost for good, because the tracker fires and forgets and never retries. Until this filter existed
+    # a one-line documentation fix paid that price. Neither path reaches an image: .dockerignore keeps
+    # **/*.md and docs out of every build context.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
 
 permissions:
@@ -43,21 +51,88 @@ jobs:
       - run: pnpm --filter @wholestory/web typecheck
       - run: pnpm --filter @wholestory/web test
 
+  # Which images a push actually changes, and whether the server has to hear about it at all.
+  #
+  # The reason this job exists is the same nineteen seconds: a rebuilt image gets a new digest, a new
+  # digest is what makes Compose recreate the container, and a recreated ingest loses events. A Spring
+  # Boot jar is not reproducible byte for byte, so rebuilding a service that did not change is not a
+  # harmless no-op — it ships a different digest for identical code.
+  changes:
+    name: What changed
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.decide.outputs.matrix }}
+      any: ${{ steps.decide.outputs.any }}
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The comparison below needs the commit this push started from.
+          fetch-depth: 0
+      - id: decide
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+            printf 'Changed files:\n%s\n' "$(printf '%s\n' "$changed" | sed 's/^/  /')"
+          else
+            # A new branch, a force push, a rewritten history: the starting point is not in the clone.
+            # Then build everything. Being wrong in this direction costs CI minutes; being wrong in the
+            # other one deploys a stale image, and nothing would say so.
+            changed=""
+            echo "Cannot tell what this push changed; rebuilding every image."
+          fi
+
+          # An empty list means "not known", so every pattern has to match it.
+          touched() { [ -z "$changed" ] || printf '%s\n' "$changed" | grep -qE "$1"; }
+
+          # Shared by all three service images: the parent pom pins every version, the wrapper builds
+          # them, event-contracts is the only module they all depend on, and the Dockerfile and the
+          # ignore file shape every build context. No service depends on another — checked against the
+          # poms — so one service's own sources belong to it alone.
+          java_shared='^(pom\.xml$|mvnw$|\.mvn/|libs/|infra/docker/service\.Dockerfile$|\.dockerignore$)'
+          web='^(web/|tracker/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|infra/docker/web\.Dockerfile$|\.dockerignore$)'
+          # Read by Dokploy at deploy time rather than by a build: changing one of these has to reach
+          # the server even though no image moved.
+          infra='^infra/(docker-compose\.prod\.yml$|prometheus/|grafana/|postgres/)'
+
+          include='[]'
+          for service in ingest processor api; do
+            if touched "$java_shared" || touched "^services/$service/"; then
+              include=$(jq -cn --argjson i "$include" --arg s "$service" \
+                '$i + [{name: $s, dockerfile: "infra/docker/service.Dockerfile", service: $s}]')
+            fi
+          done
+          if touched "$web"; then
+            include=$(jq -cn --argjson i "$include" \
+              '$i + [{name: "web", dockerfile: "infra/docker/web.Dockerfile", service: ""}]')
+          fi
+
+          any=false
+          [ "$include" != '[]' ] && any=true
+          deploy=false
+          { [ "$any" = true ] || touched "$infra"; } && deploy=true
+
+          {
+            echo "matrix={\"include\":$include}"
+            echo "any=$any"
+            echo "deploy=$deploy"
+          } >> "$GITHUB_OUTPUT"
+          echo "Images to build: $include"
+          echo "Deploy: $deploy"
+
   images:
     name: Image (${{ matrix.name }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, frontend]
+    needs: [backend, frontend, changes]
+    if: needs.changes.outputs.any == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     strategy:
-      matrix:
-        include:
-          - { name: ingest, dockerfile: infra/docker/service.Dockerfile, service: ingest }
-          - { name: processor, dockerfile: infra/docker/service.Dockerfile, service: processor }
-          - { name: api, dockerfile: infra/docker/service.Dockerfile, service: api }
-          - { name: web, dockerfile: infra/docker/web.Dockerfile, service: "" }
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
       - id: image
@@ -83,10 +158,22 @@ jobs:
 
   deploy:
     name: Deploy (Dokploy)
-    needs: images
+    needs: [backend, frontend, changes, images]
+    # The build is skipped when only a deploy-time file changed — a compose or Prometheus edit moves no
+    # image — and that still has to reach the server, so a skipped build is not a reason to stop while a
+    # failed one is. The two test jobs are named explicitly because they are skipped rather than failed
+    # once a dependency of theirs fails, and a skipped test must never look like a passing one.
+    if: >-
+      !cancelled()
+      && needs.backend.result == 'success'
+      && needs.frontend.result == 'success'
+      && (needs.images.result == 'success' || needs.images.result == 'skipped')
+      && needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
-      # Dokploy's API redeploys the Compose service, which pulls the images pushed above.
+      # Dokploy's API redeploys the Compose service, which pulls the images pushed above. Compose leaves
+      # a container alone when its image digest and its configuration are both unchanged, which is what
+      # turns the job above into fewer restarts rather than just fewer builds.
       - name: Trigger Dokploy deployment
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}

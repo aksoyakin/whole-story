@@ -1,13 +1,19 @@
 # Deployment
 
 Whole Story runs as a single Docker Compose stack on a VPS managed by [Dokploy](https://dokploy.com).
-CI builds and tests every commit; images are only built from `main` after all tests pass.
+CI builds and tests every commit; images are only built from `main` after all tests pass, and only the ones the
+push actually changed.
 
 ```
 git push main ─► GitHub Actions ─► tests (Maven + Testcontainers, Playwright, Vitest)
-                                 ─► images → ghcr.io/<owner>/whole-story-{ingest,processor,api,web}
-                                 ─► Dokploy deploy webhook ─► docker compose pull && up
+                                 ─► the changed images → ghcr.io/<owner>/whole-story-{ingest,processor,api,web}
+                                 ─► Dokploy deploy API ─► docker compose pull && up
 ```
+
+Rebuilding an image is what replaces its container, and replacing `ingest` loses the events that arrive while
+its route is down, so a push rebuilds as little as it can. A push that changes only Markdown or `docs/` runs no
+workflow at all; one that changes only the production Compose file or the Prometheus, Grafana or Postgres init
+configuration deploys without building anything. See [ADR 0012](adr/0012-build-and-deployment.md).
 
 ## Topology
 
@@ -85,7 +91,8 @@ CI redeploys through the Dokploy API after the images are pushed. Add three repo
 
 Keep Dokploy's *Autodeploy* off: a push would otherwise deploy before CI has built the new images.
 Without the secrets, CI still publishes images and skips the deploy step. Services use
-`pull_policy: always`, so every deploy pulls the current `latest` images.
+`pull_policy: always`, so every deploy pulls the current `latest` images — and a pull that returns the digest
+already running leaves that container untouched, which is what keeps an unrelated push from restarting `ingest`.
 
 ## Outgoing mail
 
