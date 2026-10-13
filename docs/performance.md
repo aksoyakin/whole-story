@@ -324,6 +324,39 @@ by taking the line out and watching it fail with `but was: "auto"`.
 It does not make the dashboard fast. A thirty-day render still asks for about eight seconds of database work,
 and that remains the open question.
 
+### An optimisation that measured twice as fast and changed nothing
+
+The breakdown cards looked like the obvious thing to fix. Seven of the eight group the same visits by a
+different column, so asking one at a time has the database read the same million rows seven times, and
+`GROUPING SETS` reads them once. A spike against this corpus said exactly that: seven separate statements
+cost 5,210 ms, one grouping-sets statement 2,575 ms, and the plan confirmed the mechanism by scanning the
+partitions once rather than seven times.
+
+Built and measured at the level that matters, it bought nothing.
+
+| | runs (ms) | median |
+|---|---|---:|
+| eight requests | 7,371 · 7,260 · 7,721 | 7,371 |
+| one request | 7,534 · 7,348 · 7,905 · 7,803 | 7,669 |
+
+Two reasons, and neither is visible from the spike.
+
+**The rows are already hot by the time the cards are drawn.** A render asks for the summary, the timeseries
+and the goals first, and all three read the same sessions. In the spike the seven statements were the only
+thing running and each paid for its own reads; in a render they do not, so being separate costs much less
+than it appeared to.
+
+**The combined query has to give up the top-N sort.** Eight separate statements each end in
+`order by visitors desc limit 10`, which PostgreSQL answers with a top-N heapsort that never materialises
+more than ten rows. Ranking within grouping sets needs `row_number()` over every group instead. That showed
+up first as a 31% regression on a *single* card, which a fast path for the one-dimension case fixed — but
+the combined form cannot avoid it, and what the single scan saves the ranking gives back.
+
+So the change was reverted: a wider contract, a nested response shape, two SQL paths and a translation layer
+in the web client, in exchange for nothing measurable. What is kept is the finding, and the habit that
+produced it — the sequencing was deliberately "put it behind the endpoint and measure a render", precisely
+because a query measured on its own is not the same query in its place.
+
 ### Two mistakes in the measuring, both of which read as good news
 
 Worth writing down because both produced a plausible number rather than an error.
