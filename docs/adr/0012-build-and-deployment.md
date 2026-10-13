@@ -37,6 +37,18 @@ server should not spend its resources compiling code.
 - The mapping from a path to an image is maintained by hand and nothing fails loudly when it is wrong: a new
   shared input that nobody adds to it would leave a service running stale code. It is deliberately coarse for
   that reason — whole directories and the few shared files, rather than anything clever.
+- **A repository file that production reads is not updated by a deployment, and the mechanism is worth
+  knowing.** Dokploy deletes and re-clones the checkout each time, while a bind mount is bound to the
+  directory's inode as it was when the container was created. A container that keeps running therefore keeps
+  reading the clone it started with, which no longer exists on disk. Measured rather than inferred: replacing
+  a mounted directory makes the file vanish from inside a running container, a change written in place is
+  visible immediately, and a plain restart is enough to pick the new clone up. So the Compose file itself does
+  update on a deployment, because Compose reads the fresh clone — which is why adding Prometheus and Grafana
+  as services worked — and everything mounted out of the repository does not, which is why adding a panel to
+  the dashboard they mount did not. The failure is silent in the worst way: Grafana answered a provisioning
+  reload with "config reloaded" and changed nothing, because the directory it re-read was the orphaned one.
+  A change to a mounted file therefore needs that one container restarted. It costs nothing here — Grafana
+  holds only sessions, Prometheus keeps its data in a volume — and it does not touch `ingest`.
 - This narrows the window in which a deploy loses events rather than closing it. A push that does change `ingest`
   still costs those nineteen seconds, because Compose has no rolling replacement: `deploy.update_config` belongs
   to Swarm and is ignored here. Measured rather than assumed — two replicas declared with `order: start-first`

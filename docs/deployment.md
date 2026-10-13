@@ -134,6 +134,25 @@ psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZ
 
 Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
+## A mounted config file needs its container restarted
+
+Grafana's dashboards and provisioning, and Prometheus' scrape configuration, are bind-mounted out of this
+repository rather than baked into an image. Deploying a change to one of them is not enough to apply it.
+
+Dokploy deletes and re-clones the checkout on every deployment, and a bind mount is bound to the directory's
+inode as it stood when the container was created. A container that keeps running — and one whose image and
+configuration did not change is deliberately left running — therefore keeps reading the clone it started
+with, which no longer exists. Measured: replacing a mounted directory makes the file vanish from inside a
+running container, while a change written in place is visible at once, and a restart is enough to pick the new
+clone up.
+
+**After changing a file under `infra/grafana/` or `infra/prometheus/`, restart that one container.** It costs
+nothing: Grafana holds only sessions and Prometheus keeps its data in a volume, and neither restart touches
+`ingest`. The Compose file itself is exempt, because Compose reads it from the fresh clone.
+
+Expect no error if you forget. Grafana answers a provisioning reload with `config reloaded` and keeps serving
+the old dashboard, because the directory it re-read is the orphaned one.
+
 ## Kafka topics are created at startup
 
 Auto-creation is off on the broker, so every topic is declared as a `NewTopic` bean by the service that owns it:
