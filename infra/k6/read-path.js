@@ -41,7 +41,10 @@ const DIMENSIONS = ['PAGE', 'SOURCE', 'COUNTRY', 'REGION', 'CITY', 'BROWSER', 'O
 // A filter the corpus actually contains, so that the filtered path measures work rather than an empty result.
 const FILTER = 'COUNTRY:TR';
 
-const PERIODS = ['today', '7d', '30d', '12m'];
+// Overridable so a before-and-after can hold one period still. Walking all four in one loop leaves a
+// twelve-month sweep settling while the thirty-day requests arrive, and that contention is larger than most
+// of the differences a comparison is looking for.
+const PERIODS = (__ENV.PERIODS || 'today,7d,30d,12m').split(',').map((p) => p.trim());
 
 // Declared up front, every one of them, because k6 only allows a metric to be created in the init context --
 // building them lazily on first use fails the iteration with "metrics must be declared in the init context".

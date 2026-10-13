@@ -5,6 +5,24 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/wholestory}
     username: ${DATABASE_USERNAME:wholestory_api}
     password: ${DATABASE_PASSWORD:api}
+    hikari:
+      # Plan every statement for the parameters it was given, instead of letting PostgreSQL settle on one
+      # plan that has to suit them all.
+      #
+      # The driver promotes a statement to a server-side prepared one after its fifth execution, and from
+      # then on the server may build a generic plan and keep it. Measured against the seeded corpus, the
+      # summary query costs 390 ms planned for its arguments and 750 ms on the generic plan — and a reporting
+      # query is exactly the shape that suffers, because what it reads depends entirely on which site and how
+      # wide a date range it was handed. Nothing in the first four executions shows this, which is why every
+      # hand-run measurement missed it (docs/performance.md).
+      #
+      # force_custom_plan rather than prepareThreshold=0: that would stop the statement being prepared at
+      # all and pay for parsing it again every time, while this keeps the parse and drops only the part that
+      # hurts. Planning the query above costs 2.3 ms against hundreds of milliseconds of execution.
+      #
+      # Set here rather than on the database role, so it travels with the service instead of being a manual
+      # step somebody has to remember on a new database (D-094's cost).
+      connection-init-sql: SET plan_cache_mode = 'force_custom_plan'
   flyway:
     # api owns identity, sites and platform (D-012); analytics is read through processor's api_* views.
     schemas: identity,sites,platform

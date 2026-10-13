@@ -274,17 +274,16 @@ nothing else:
 | `force_custom_plan` | 390 ms |
 | `auto` (the default, and production) | 750 ms |
 
-The penalty is specific to that statement. The page breakdown, the goals and the timeseries measure the same
-under both settings, and their end-to-end cost matches their SQL cost almost exactly — 1.9 s against 1.98 s,
-1.40 s against 1.38 s, 0.61 s against 0.55 s.
+That first comparison said the penalty was specific to the summary statement, because the page breakdown, the
+goals and the timeseries measured the same under both settings. It was wrong, and the reason is the same
+threshold: that comparison made **four** requests per endpoint, so the arm that was supposed to show generic
+plans never reached the fifth execution and never built one. Measured properly, with the harness running five
+full iterations, the penalty is spread across the whole page.
 
 **That makes the method above wrong in a way worth naming.** Timing a statement through psql's `\bind`, which
 is what the timings harness does, always uses an unnamed statement and therefore always gets a custom plan.
 Every hand-measured number in this document is the better of two plans, and production stops using it after
-the fifth request. The remedy is one line — `plan_cache_mode = force_custom_plan` on the role, or
-`prepareThreshold=0` on the JDBC URL — and planning this query costs 2.3 ms against hundreds of milliseconds
-of execution, so it looks cheap. It is not applied here: a change to how every statement in the service is
-planned deserves its own before and after rather than a footnote in somebody else's measurement.
+the fifth request. The remedy is one line, and it has been applied with its own before and after — below.
 
 **What is left of the gap is the run's own shape.** The summed row prices seven breakdown cards at the source
 card's cost; measured individually they come to about 2.9 seconds rather than 2.4, since region and city group
@@ -292,6 +291,38 @@ over more values. The rest is contention: the end-to-end run walks all four peri
 twelve-month sweep is still settling when the thirty-day requests arrive. Cache was ruled out — re-running the
 SQL timings right after that sweep gave 6,611 ms against 6,637 ms before it — but an idle cache is not an idle
 system, and that distinction is the one this measurement got wrong first.
+
+### The fix, and what it bought
+
+`spring.datasource.hikari.connection-init-sql: SET plan_cache_mode = 'force_custom_plan'`, on api only.
+
+`force_custom_plan` rather than `prepareThreshold=0`: that would stop the statement being prepared at all and
+pay to parse it again every time, while this keeps the parse and drops only the part that hurts. Set on the
+connection pool rather than on the database role, so it travels with the service instead of being a step
+somebody has to remember on a new database. Applied to api alone — the processor's writes were not measured,
+and changing them on the strength of somebody else's result is the mistake this whole section is about.
+
+Thirty days, five iterations of the full page, medians, the same harness on both sides:
+
+| | before | after | |
+|---|---:|---:|---:|
+| one render | 10,429 ms | **7,939 ms** | −24% |
+| summary | 865 ms | **375 ms** | −57% |
+| breakdown: page | 3,608 ms | **2,010 ms** | −44% |
+| goals | 2,315 ms | 1,669 ms | −28% |
+| timeseries | 943 ms | 626 ms | −34% |
+| breakdown: city | 478 ms | 520 ms | +9% |
+
+A second run of the after case landed at 8,114 ms against 7,939, so the difference is comfortably larger than
+the spread between runs.
+
+It is guarded by a test. The absence of that line is completely silent — nothing fails, nothing is logged, the
+numbers are simply worse, and the first four executions of any statement look identical either way. The test
+asserts `show plan_cache_mode` on a pooled connection, and was checked the only way a regression test can be:
+by taking the line out and watching it fail with `but was: "auto"`.
+
+It does not make the dashboard fast. A thirty-day render still asks for about eight seconds of database work,
+and that remains the open question.
 
 ### Two mistakes in the measuring, both of which read as good news
 
