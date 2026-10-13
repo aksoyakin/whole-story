@@ -9,6 +9,13 @@ browser. Two things have to be kept out: events for domains that are not registe
 source to make a site's numbers wrong. Inflated numbers are worse than missing ones, because nobody can tell.
 
 ## Decision
+- **Payload size.** A request body may be at most `ingest.max-event-bytes` (8 KiB). A tracker payload is a few
+  hundred bytes; the headroom covers a long url, a long referrer and custom event props. The limit is applied
+  before the body is bound, because a limit checked after the read is not a limit: the body would already be in
+  memory. `Content-Length` is rejected when it declares too much, which is the cheapest refusal available, but
+  the read itself is capped as well — a chunked request declares no length and a caller may understate the one
+  it does declare. Without this, the rate limit below bounded how many events a visitor could send and nothing
+  bounded what each one cost, in memory or in a row of `analytics.events`.
 - **Origin.** When the request carries an `Origin` header, its host must equal the normalised `data-domain`;
   otherwise the event is rejected. A missing or opaque (`null`) origin is accepted: browsers are inconsistent about
   sending the header on same-origin requests, and a client that is not a browser can put anything there anyway.
@@ -21,11 +28,21 @@ source to make a site's numbers wrong. Inflated numbers are worse than missing o
 - The raw IP is never part of a Redis key, in line with [ADR 0005](0005-privacy-by-design.md): it does not leave
   ingest in any form other than the visitor hash and the resolved location.
 - Every rejection increments `events.rejected` tagged with its reason (`unknown_domain`, `origin_mismatch`,
-  `rate_limited`, `malformed_payload`, …), so a site that is misconfigured or under attack is visible rather than
-  silently absent from the dashboard.
-- Rejections answer `400`, except the rate limit which answers `429`.
+  `rate_limited`, `payload_too_large`, `malformed_payload`, …), so a site that is misconfigured or under attack
+  is visible rather than silently absent from the dashboard.
+- Rejections answer `400`, except the rate limit (`429`) and an oversized body (`413`). Those two get their own
+  status because they are the two a site's own developer can act on, and the status says which without them
+  having to read our source.
 
 ## Consequences
+- The size limit is the only check that runs before the request is a known site's at all, so it is also the only
+  one an unregistered domain cannot get past cheaply. That ordering is deliberate: it is the check that protects
+  the service rather than the numbers.
+- A site that legitimately sends more than 8 KiB of props per event is refused, and the only signal is a `413`
+  its browser never reports. The limit is therefore configuration rather than a constant, and `events.rejected`
+  carries `payload_too_large` so the refusal is visible on our side even though nobody is watching on theirs.
+- Capping the read means an oversized request is answered before its body has finished arriving. The connection
+  is closed rather than drained, which is the right trade for a fire-and-forget collector.
 - The rate limit runs after the site lookup and the visitor hash, because it needs that hash. It is therefore not
   the cheapest possible rejection; that is the trade-off for not punishing visitors who share an address.
 - The bucket depends on the client address, which ingest reads from `X-Forwarded-For`. That header is only

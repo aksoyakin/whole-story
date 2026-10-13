@@ -29,7 +29,7 @@ class RateLimiterIntegrationTest {
 
     private RateLimiter limiterAt(Instant now) {
         return new RateLimiter(redis, Clock.fixed(now, ZoneOffset.UTC),
-                new IngestProperties(1, Path.of("unused"), LIMIT));
+                new IngestProperties(1, Path.of("unused"), LIMIT, 0));
     }
 
     @Test

@@ -13,10 +13,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.json.JsonMapper;
 import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.Topics;
 import world.wholestory.ingest.TestcontainersConfiguration;
+import world.wholestory.ingest.config.IngestProperties;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -44,6 +46,8 @@ class EventIngestionIntegrationTest {
     KafkaConnectionDetails kafkaConnection;
     @Autowired
     JsonMapper jsonMapper;
+    @Autowired
+    IngestProperties properties;
 
     @Test
     void publishesAPrivacySafeEventForARegisteredDomain() throws Exception {
@@ -137,7 +141,31 @@ class EventIngestionIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
-    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder event(String domain) {
+    @Test
+    void rejectsAnEventLargerThanIngestWillHold() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "too-big.test", siteId.toString());
+
+        mvc.perform(event("too-big.test", bodyOf("too-big.test", properties.maxEventBytes() + 1)))
+                .andExpect(status().isContentTooLarge());
+    }
+
+    @Test
+    void acceptsAnEventThatExactlyFitsTheLimit() throws Exception {
+        UUID siteId = UUID.randomUUID();
+        redis.opsForHash().put(SiteRegistry.KEY, "fits.test", siteId.toString());
+
+        // The pair is what the limit means: these two bodies are one byte apart, so what is being refused above
+        // is a size and not the presence of props.
+        mvc.perform(event("fits.test", bodyOf("fits.test", properties.maxEventBytes())))
+                .andExpect(status().isAccepted());
+    }
+
+    private static MockHttpServletRequestBuilder event(String domain) {
+        return event(domain, "{\"name\":\"pageview\",\"url\":\"https://" + domain + "/\",\"domain\":\"" + domain + "\"}");
+    }
+
+    private static MockHttpServletRequestBuilder event(String domain, String body) {
         return post("/api/event")
                 .contentType(MediaType.TEXT_PLAIN)
                 .header("User-Agent", "Mozilla/5.0 (Macintosh)")
@@ -145,7 +173,14 @@ class EventIngestionIntegrationTest {
                     request.setRemoteAddr(CLIENT_IP);
                     return request;
                 })
-                .content("{\"name\":\"pageview\",\"url\":\"https://" + domain + "/\",\"domain\":\"" + domain + "\"}");
+                .content(body);
+    }
+
+    /** A pageview padded with a prop to exactly {@code bytes}; all of it is ASCII, so bytes and chars agree. */
+    private static String bodyOf(String domain, int bytes) {
+        String body = "{\"name\":\"pageview\",\"url\":\"https://%s/\",\"domain\":\"%s\",\"props\":{\"pad\":\"\"}}"
+                .formatted(domain, domain);
+        return body.replace("\"pad\":\"\"", "\"pad\":\"%s\"".formatted("x".repeat(bytes - body.length())));
     }
 
     /** Other tests in this class publish to the same topic, so the record has to be matched by site. */

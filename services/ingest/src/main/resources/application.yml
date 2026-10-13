@@ -31,6 +31,12 @@ ingest:
   geoip-database: ${GEOIP_DATABASE:/geoip/GeoLite2-City.mmdb}
   # One visitor reporting more than this in a minute is not a person; see ADR 0016.
   max-events-per-visitor-per-minute: 60
+  # The largest body one event may have. A tracker payload is a few hundred bytes; the room above that is for a
+  # long url, a long referrer and custom event props, and it still refuses a body that could only be an attempt
+  # to make us hold one. The limit above bounds how many events a visitor sends, this one bounds what each of
+  # them costs in memory and in a row of analytics.events — and this endpoint is unauthenticated and the only
+  # one reachable from the internet, so the bound is the point. ADR 0016.
+  max-event-bytes: 8192
 
 management:
   server:
