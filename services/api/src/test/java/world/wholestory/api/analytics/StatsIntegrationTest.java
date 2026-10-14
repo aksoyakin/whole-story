@@ -256,6 +256,9 @@ class StatsIntegrationTest {
 
         String live = json(stats(site, "summary", "2026-10-01", "2026-10-05", site.session()));
         String liveCountries = breakdownOver(site, "COUNTRY", "2026-10-01", "2026-10-05");
+        // A path taken from the visit rather than the pageview, so the edges of the range are counted from
+        // the sessions here and from the events for PAGE — two different edge statements, one contract.
+        String liveEntryPages = breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05");
 
         rollUp("2026-10-01");
         rollUp("2026-10-02");
@@ -269,13 +272,19 @@ class StatsIntegrationTest {
         assertThat(breakdownOver(site, "COUNTRY", "2026-10-01", "2026-10-05"))
                 .as("nor must a breakdown")
                 .isEqualTo(liveCountries);
+        assertThat(breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05"))
+                .as("nor one whose value is a path the visit carries")
+                .isEqualTo(liveEntryPages);
     }
 
     /**
-     * The rollup holds seven dimensions, not every dimension a visit has. An entry page is not one of them,
-     * and asking the table for one returns nothing rather than failing — so without the guard this breakdown
+     * The rollup holds ten dimensions, not every dimension a visit has. A campaign is not one of them, and
+     * asking the table for one returns nothing rather than failing — so without the guard this breakdown
      * would come back holding only the two partial days at the edges of the range, which is a figure that is
      * wrong by most of the range and looks perfectly ordinary.
+     * <p>
+     * It used to ask for an entry page, which is now rolled up itself. Keeping a case the rollup does not
+     * answer is the point of the test, so it moved to the dimensions that are still counted live.
      */
     @Test
     void aDimensionTheRollupDoesNotHoldIsStillCountedFromTheSessions() throws Exception {
@@ -284,7 +293,7 @@ class StatsIntegrationTest {
         sessionWith(site.id(), 82L, "2026-10-02T10:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
         sessionWith(site.id(), 83L, "2026-10-03T10:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
 
-        String live = breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05");
+        String live = breakdownOver(site, "UTM_CAMPAIGN", "2026-10-01", "2026-10-05");
 
         rollUp("2026-10-01");
         rollUp("2026-10-02");
@@ -292,7 +301,7 @@ class StatsIntegrationTest {
         rollUp("2026-10-04");
         seed.sql("update analytics.visitor_daily_watermark set covered_through = date '2026-10-04'").update();
 
-        assertThat(breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05")).isEqualTo(live);
+        assertThat(breakdownOver(site, "UTM_CAMPAIGN", "2026-10-01", "2026-10-05")).isEqualTo(live);
     }
 
     /** A watermark that has not reached the range leaves every day to be counted live, as before. */
@@ -315,7 +324,9 @@ class StatsIntegrationTest {
                 {"TOTAL", "''", "null::text", ""},
                 {"COUNTRY", "coalesce(country_code::text, '')", "null::text", ", country_code"},
                 {"BROWSER", "coalesce(browser, '')", "null::text", ", browser"},
-                {"REGION", "coalesce(subdivision_code, '')", "max(subdivision_name)", ", subdivision_code"}}) {
+                {"REGION", "coalesce(subdivision_code, '')", "max(subdivision_name)", ", subdivision_code"},
+                {"ENTRY_PAGE", "coalesce(entry_page, '')", "null::text", ", entry_page"},
+                {"EXIT_PAGE", "coalesce(exit_page, '')", "null::text", ", exit_page"}}) {
             seed.sql("""
                             insert into analytics.visitor_daily
                                 (site_id, utc_day, dimension, value, label, visitors, visits, pageviews,

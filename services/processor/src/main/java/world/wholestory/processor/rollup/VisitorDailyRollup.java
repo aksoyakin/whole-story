@@ -65,8 +65,14 @@ public class VisitorDailyRollup {
      * Every session-backed dimension the dashboard breaks down by, plus the day's own totals.
      * <p>
      * One statement per day rather than one per dimension: there is no top-N to give up on the write side,
-     * so grouping sets here cost a single pass over the day instead of eight (which is the opposite of what
+     * so grouping sets here cost a single pass over the day instead of nine (which is the opposite of what
      * the same shape did on the read side — see D-158).
+     * <p>
+     * The entry and exit pages are the newest two, and that they are grouping sets rather than a statement
+     * of their own is the whole argument for adding them: a visit carries both as columns, so the pass this
+     * already makes over the day answers them. Cheap is not free, and the scan is the part that is shared —
+     * the rows still have to be written, and they roughly double what a day stores. Measured, a full 712-day
+     * backfill went from 156 s to 236 s.
      */
     private static final String COMPUTE = """
             insert into analytics.visitor_daily
@@ -80,6 +86,8 @@ public class VisitorDailyRollup {
                         when grouping(s.browser)          = 0 then 'BROWSER'
                         when grouping(s.os)               = 0 then 'OS'
                         when grouping(s.device_type)      = 0 then 'DEVICE'
+                        when grouping(s.entry_page)       = 0 then 'ENTRY_PAGE'
+                        when grouping(s.exit_page)        = 0 then 'EXIT_PAGE'
                         else 'TOTAL' end,
                    case when grouping(s.referrer_source)  = 0 then coalesce(s.referrer_source, '')
                         when grouping(s.country_code)     = 0 then coalesce(s.country_code::text, '')
@@ -88,6 +96,8 @@ public class VisitorDailyRollup {
                         when grouping(s.browser)          = 0 then coalesce(s.browser, '')
                         when grouping(s.os)               = 0 then coalesce(s.os, '')
                         when grouping(s.device_type)      = 0 then coalesce(s.device_type, '')
+                        when grouping(s.entry_page)       = 0 then coalesce(s.entry_page, '')
+                        when grouping(s.exit_page)        = 0 then coalesce(s.exit_page, '')
                         else '' end,
                    -- A label only exists where the value is a code or an id; max() because it is determined
                    -- by the value and this avoids widening the key with something nobody groups by.
@@ -104,7 +114,8 @@ public class VisitorDailyRollup {
             group by grouping sets (
                 (s.site_id, s.referrer_source), (s.site_id, s.country_code), (s.site_id, s.subdivision_code),
                 (s.site_id, s.city_geoname_id), (s.site_id, s.browser), (s.site_id, s.os),
-                (s.site_id, s.device_type), (s.site_id))
+                (s.site_id, s.device_type), (s.site_id, s.entry_page), (s.site_id, s.exit_page),
+                (s.site_id))
             on conflict (site_id, utc_day, dimension, value) do nothing
             """;
 

@@ -1,0 +1,32 @@
+-- The entry and exit pages join the daily rollup. There is no DDL below, and that is the point: this
+-- migration exists only to rewind the watermark, because that is the one thing the writer cannot do for
+-- itself.
+--
+-- Why they belong here, when V4 left them out: V4's rule was read as "not the high cardinality dimensions",
+-- and V5 corrected it to "not a *new* high cardinality axis". These two are not a new axis either — they
+-- are the pathname axis again, taken from the visit instead of the pageview, and a visit has exactly one of
+-- each, so together they add at most two rows per path per day against the pages' one. They are also the
+-- cheapest dimensions this table will ever gain: they are columns on analytics.sessions, so they enter as
+-- two more grouping sets in the statement that already reads the day, rather than as another pass over it.
+--
+-- Why it is worth it: over twelve months these two cards were 3.9 s and 3.3 s of a 24.4 s render, and
+-- nothing about them was unusual -- they grow with the range exactly as the page breakdown did before V5.
+--
+-- Unlike a page row, these carry every column. A page is not a visit, so V5 left its visits, bounces and
+-- duration sum null (they are questions a page cannot be asked); an entry page *is* a property of a visit,
+-- so the figures are real and the statement computes them in the same pass whether or not anything reads
+-- them today. Splitting them out to store less would mean a second pass over the sessions, which costs more
+-- than the four bigints it would save.
+
+-- Back to the beginning, for the reason V5 spelled out and which has not changed: the watermark is one row
+-- for the table rather than one per dimension, and the job only moves forwards. Without this, every day
+-- already covered would keep its seven dimensions and never be given an entry or exit row -- while the
+-- reader, consulting that same watermark, would take those days from the rollup and find nothing in them. A
+-- twelve-month breakdown would come back holding only the two partial days at the edges of the range, and
+-- looking entirely ordinary.
+--
+-- Safe because every insert is `on conflict do nothing`: the days already computed are recomputed into
+-- no-ops, the two new dimensions are new rows, and the job paces itself at thirty days a run. Until it
+-- catches up, the answers are identical and only slower -- which is what it means for the rollup to be an
+-- accelerator and not an authority.
+update analytics.visitor_daily_watermark set covered_through = null, updated_at = now();

@@ -22,19 +22,20 @@ class DimensionTest {
     @Test
     void onlyTheDimensionsTheDailyRollupComputesMayBeReadFromIt() {
         assertThat(Arrays.stream(Dimension.values()).filter(Dimension::rolledUp).toList())
-                .containsExactly(Dimension.PAGE, Dimension.SOURCE, Dimension.COUNTRY, Dimension.REGION,
-                        Dimension.CITY, Dimension.BROWSER, Dimension.OS, Dimension.DEVICE);
+                .containsExactly(Dimension.PAGE, Dimension.ENTRY_PAGE, Dimension.EXIT_PAGE, Dimension.SOURCE,
+                        Dimension.COUNTRY, Dimension.REGION, Dimension.CITY, Dimension.BROWSER, Dimension.OS,
+                        Dimension.DEVICE);
     }
 
     /**
-     * The ones still counted live, named so that adding one to the rollup is a decision rather than a slip. A
-     * row per entry page or per campaign per day would make the rollup a second copy of the sessions.
+     * The ones still counted live, named so that adding one to the rollup is a decision rather than a slip.
+     * These five are a campaign axis the rollup does not carry at all, so a row per value per day would be
+     * new width rather than a summary of width it already has.
      */
     @Test
-    void thePerVisitDimensionsAreCountedLive() {
+    void theCampaignDimensionsAreCountedLive() {
         assertThat(Arrays.stream(Dimension.values()).filter(d -> !d.rolledUp()).toList())
-                .containsExactly(Dimension.ENTRY_PAGE, Dimension.EXIT_PAGE,
-                        Dimension.UTM_SOURCE, Dimension.UTM_MEDIUM, Dimension.UTM_CAMPAIGN,
+                .containsExactly(Dimension.UTM_SOURCE, Dimension.UTM_MEDIUM, Dimension.UTM_CAMPAIGN,
                         Dimension.UTM_CONTENT, Dimension.UTM_TERM);
     }
 }

@@ -17,8 +17,8 @@ package world.wholestory.api.analytics.application;
 public enum Dimension {
 
     PAGE(Source.EVENTS, "pathname", null, null, "pathname", true),
-    ENTRY_PAGE(Source.SESSIONS, "entry_page", null, "entry_page", null, false),
-    EXIT_PAGE(Source.SESSIONS, "exit_page", null, "exit_page", null, false),
+    ENTRY_PAGE(Source.SESSIONS, "entry_page", null, "entry_page", null, true),
+    EXIT_PAGE(Source.SESSIONS, "exit_page", null, "exit_page", null, true),
     SOURCE(Source.SESSIONS, "referrer_source", null, "referrer_source", "referrer_source", true),
     COUNTRY(Source.SESSIONS, "country_code", null, "country_code", "country_code", true),
     REGION(Source.SESSIONS, "subdivision_code", "subdivision_name", "subdivision_code", "subdivision_code", true),
@@ -56,14 +56,19 @@ public enum Dimension {
 
     /**
      * Whether the daily visitor rollup holds this dimension, and so whether a report over it may be answered
-     * from there. High cardinality is why the rest are not: a row per entry page or per campaign per day
-     * would make the rollup a second copy of the sessions rather than a summary of them.
+     * from there. What keeps the rest out is not cardinality as such but a *new* axis of it: a row per
+     * campaign per day would make the rollup a second copy of the sessions rather than a summary of them.
      * <p>
-     * The page is the exception, and it is in for a measured reason rather than against that one: the
-     * pathname axis is already kept at an hourly grain in {@code page_hourly}, so a daily grain is a tenth of
-     * a rollup this schema already carries, and over twelve months this was the most expensive breakdown on
-     * the dashboard. It is also the only rolled up dimension sourced from the events, which the reader has to
-     * respect when it counts the two partial days at the edges of a range.
+     * The three page dimensions are in, and for a measured reason rather than against that one. The pathname
+     * axis is already kept at an hourly grain in {@code page_hourly}, so a daily grain is a fraction of a
+     * rollup this schema carries anyway, and over twelve months these were the most expensive breakdowns on
+     * the dashboard. The entry and exit pages are the same axis seen from the visit, which also makes them
+     * the cheapest to hold: they are columns on the sessions, so the rollup's one pass over a day answers
+     * them.
+     * <p>
+     * The page remains the only rolled up dimension sourced from the events, which the reader has to respect
+     * when it counts the two partial days at the edges of a range: those come from the events for the page
+     * and from the sessions for everything else here.
      */
     public boolean rolledUp() {
         return rolledUp;

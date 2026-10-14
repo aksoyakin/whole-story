@@ -125,6 +125,39 @@ class VisitorDailyRollupIntegrationTest {
     }
 
     /**
+     * The entry and exit pages are the same path axis as the page, taken from the visit rather than from the
+     * pageview, so they are grouping sets over the sessions and never touch the events.
+     * <p>
+     * The fixture gives the two of them different paths on purpose. Both are a path and both are grouped the
+     * same way, so a report built on them looks entirely plausible with the two swapped — a dashboard would
+     * simply label its most common landing page as the page people leave from. Equal counts would not notice,
+     * so the counts here are deliberately unequal.
+     */
+    @Test
+    void theEntryAndExitPagesAreCountedFromTheVisitAndAddUpTheSameWay() {
+        UUID site = UUID.randomUUID();
+        session(site, LAST.minusDays(1), 1101L, "TR", "Chrome", "/", "/pricing");
+        session(site, LAST.minusDays(1), 1102L, "TR", "Chrome", "/", "/docs");
+        session(site, LAST, 1103L, "TR", "Chrome", "/", "/pricing");
+
+        rollup.catchUp();
+
+        LocalDate from = LAST.minusDays(1);
+        LocalDate to = LAST.plusDays(1);
+        assertThat(visitorsFor(site, "ENTRY_PAGE", "/", from, to))
+                .isEqualTo(liveVisitors(site, "entry_page", "/", from, to))
+                .isEqualTo(3);
+        assertThat(visitorsFor(site, "EXIT_PAGE", "/pricing", from, to))
+                .isEqualTo(liveVisitors(site, "exit_page", "/pricing", from, to))
+                .isEqualTo(2);
+        assertThat(visitorsFor(site, "EXIT_PAGE", "/docs", from, to))
+                .isEqualTo(liveVisitors(site, "exit_page", "/docs", from, to))
+                .isEqualTo(1);
+        // Nobody landed on /docs, so the swap this guards against would show up here as a row that exists.
+        assertThat(visitorsFor(site, "ENTRY_PAGE", "/docs", from, to)).isZero();
+    }
+
+    /**
      * A day that has not settled is left alone. Counting it would freeze a figure that is not final, and the
      * insert does nothing on conflict, so it would never be corrected.
      */
@@ -186,7 +219,8 @@ class VisitorDailyRollupIntegrationTest {
 
         assertThat(jdbc.sql("select distinct dimension from analytics.visitor_daily order by 1")
                 .query(String.class).list())
-                .containsExactly("BROWSER", "CITY", "COUNTRY", "DEVICE", "OS", "PAGE", "REGION", "SOURCE", "TOTAL");
+                .containsExactly("BROWSER", "CITY", "COUNTRY", "DEVICE", "ENTRY_PAGE", "EXIT_PAGE", "OS",
+                        "PAGE", "REGION", "SOURCE", "TOTAL");
     }
 
     private long visitorsFor(UUID site, String dimension, String value, LocalDate from, LocalDate to) {
@@ -217,6 +251,11 @@ class VisitorDailyRollupIntegrationTest {
      * while holding no page rows at all.
      */
     private void session(UUID site, LocalDate day, long visitor, String country, String browser) {
+        session(site, day, visitor, country, browser, "/", "/pricing");
+    }
+
+    private void session(UUID site, LocalDate day, long visitor, String country, String browser,
+                         String entryPage, String exitPage) {
         Instant at = day.atTime(12, 0).toInstant(ZoneOffset.UTC);
         UUID visit = UuidV7.generate(at);
         jdbc.sql("""
@@ -224,12 +263,23 @@ class VisitorDailyRollupIntegrationTest {
                             (session_id, started_at, site_id, visitor_hash, ended_at, pageviews, events,
                              entry_page, exit_page, country_code, subdivision_code, subdivision_name,
                              city_geoname_id, city_name, browser, os, device_type)
-                        values (?, ?, ?, ?, ?, 2, 2, '/', '/pricing', ?, 'TR-06', 'Ankara', 323786, 'Ankara',
+                        values (?, ?, ?, ?, ?, 2, 2, ?, ?, ?, 'TR-06', 'Ankara', 323786, 'Ankara',
                                 ?, 'macOS', 'desktop')""")
-                .params(visit, at(at), site, visitor, at(at.plus(60, ChronoUnit.SECONDS)), country, browser)
+                .params(visit, at(at), site, visitor, at(at.plus(60, ChronoUnit.SECONDS)),
+                        entryPage, exitPage, country, browser)
                 .update();
-        pageview(site, visit, visitor, at, "/");
-        pageview(site, visit, visitor, at.plus(60, ChronoUnit.SECONDS), "/pricing");
+        pageview(site, visit, visitor, at, entryPage);
+        pageview(site, visit, visitor, at.plus(60, ChronoUnit.SECONDS), exitPage);
+    }
+
+    /** The same figure the rollup is meant to reproduce, counted from the sessions it summarises. */
+    private long liveVisitors(UUID site, String column, String value, LocalDate from, LocalDate to) {
+        return jdbc.sql(("""
+                        select count(distinct visitor_hash) from analytics.sessions
+                        where site_id = ? and %s = ? and started_at >= ? and started_at < ?""")
+                        .formatted(column))
+                .params(site, value, at(from), at(to))
+                .query(Long.class).single();
     }
 
     private void pageview(UUID site, UUID visit, long visitor, Instant at, String path) {
