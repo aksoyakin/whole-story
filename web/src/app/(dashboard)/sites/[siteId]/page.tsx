@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Dashboard } from "@/components/analytics/dashboard";
+import { SiteSwitcher } from "@/components/sites/site-switcher";
 import { requireUser } from "@/lib/auth";
 import { parseFilters } from "@/lib/filters";
 import { goalConversions } from "@/lib/goals";
@@ -75,7 +76,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
       <Dashboard
         heading={
           <div className="flex flex-col gap-1">
-            <h1 className="font-semibold text-2xl tracking-tight">{site.domain}</h1>
+            <SiteSwitcher sites={sites} current={site} period={period} metric={metric} />
             <p className="text-muted-foreground text-xs">
               Days start and end in{" "}
               <Link href={`/sites/${siteId}/settings`} className="underline underline-offset-4">
