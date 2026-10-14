@@ -52,6 +52,11 @@ being behind costs speed and not correctness. A day is counted an hour after it 
 because it is counted once and never recounted, and a session that began at 23:58 is still being extended
 after midnight.
 
+One limitation comes with counting a day once: an outage longer than that hour means sessions arrive for a
+day already counted, and they are never picked up, so reports over a range containing that day are short by
+them. The remedy — marking a day dirty when a batch lands behind it and recomputing it — is not built, and
+the gauge saying how far behind the rollup is will not show this, because the rollup is not behind.
+
 Measured at render level: a twelve-month dashboard went from 70 s to 40 s and a thirty-day one from 7.2 s to
 4.3 s, with the endpoints it answers between 72% and 99.8% faster and no longer growing with the range. It
 costs 253 MB against the sessions' 5 GB, and about 2% on the reports it does not serve, which now compete

@@ -1,6 +1,7 @@
 package world.wholestory.api.analytics;
 
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,18 @@ class StatsIntegrationTest {
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         seed = JdbcClient.create(dataSource);
         ensurePartitions();
+        startFromNothingRolledUp();
+    }
+
+    /**
+     * This is the only class that writes rollup rows, so it is the one that has to leave none behind. A
+     * watermark left set makes every later test's unfiltered report read the rollup, and a site those tests
+     * seeded afterwards has no rows in it — so the interior of their range comes back empty and the figure
+     * is simply wrong, with nothing looking broken. It cost a CI run to find, because the two classes happen
+     * to run the other way round locally.
+     */
+    @AfterEach
+    void leaveNothingRolledUp() {
         startFromNothingRolledUp();
     }
 

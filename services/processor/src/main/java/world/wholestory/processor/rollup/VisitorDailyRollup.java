@@ -51,6 +51,13 @@ public class VisitorDailyRollup {
      * <p>
      * An hour is far beyond the lag this pipeline shows when it is healthy — seconds — and the cost of being
      * generous is only that yesterday is answered from the sessions for one hour longer.
+     * <p>
+     * What it does not cover, stated rather than hidden: an outage longer than this window. Sessions that
+     * arrive for a day already counted are not picked up, because the insert does nothing on conflict and the
+     * watermark never goes back, so every report over a range containing that day is short by them. Fixing it
+     * properly means marking a day dirty when a batch lands behind it and recomputing it, which is a decision
+     * about how far to trust the rollup rather than a detail of this class. Until then the gauge below is what
+     * says the rollup is behind, and a consumer lag alert is what would say a day was missed.
      */
     private static final Duration GRACE = Duration.ofHours(1);
 
