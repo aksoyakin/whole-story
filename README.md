@@ -55,7 +55,7 @@ for thirty**. The figure the work below is quoted against is a **twelve-month** 
 buttons do not reach it, but the date fields beside them do, up to a capped 366 days, and that is where the
 costs that grow with the range show up at all.
 
-Three changes, each measured at render level rather than on the query alone:
+Four changes, each measured at render level rather than on the query alone:
 
 - planning reporting queries for the arguments they actually get, rather than letting a generic plan be
   reused (−24%);
@@ -64,11 +64,16 @@ Three changes, each measured at render level rather than on the query alone:
   rotates daily (twelve months 70 → 40 s);
 - rolling the page breakdown up the same way, and dropping two numbers from the breakdown contract that
   nothing had ever rendered — one of them cost nine seconds on its own (twelve months 46.9 → 24.4 s, the
-  page breakdown itself 18.9 s → 133 ms).
+  page breakdown itself 18.9 s → 133 ms);
+- rolling up the entry and exit pages too, which are the same path axis seen from the visit and therefore
+  two more grouping sets in a statement that already reads the day, not another pass over it (twelve months
+  26.2 → 17.2 s, the two cards 3.8 s and 4.0 s → 148 ms and 62 ms).
 
-Twelve months is still twenty-four seconds and ten of those are the goals, which are user-defined and
-retroactive and so have nothing to pre-aggregate. That is the next thing to work on rather than a figure to
-be proud of.
+Twelve months is now seventeen seconds, and fifteen of those are two endpoints: the goals, which are
+user-defined and retroactive and so have nothing to pre-aggregate, and the time series, whose buckets are the
+site's local days while the rollup's grain is the UTC day — one local day straddles two, so no daily rollup
+can answer it. The cheap dimensions are all taken; that is the state of the work rather than a figure to be
+proud of.
 
 The method, the deviations from production, the full tables, the defect the load test found, an optimisation
 that measured twice as fast and changed nothing, and two measurements that turned out to be measuring the

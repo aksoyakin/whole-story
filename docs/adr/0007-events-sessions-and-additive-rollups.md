@@ -72,6 +72,28 @@ breakdown itself from 18.9 s to 0.13 s, while the filtered control arm stayed pu
 the api serves and the dashboard does not currently offer — see `docs/performance.md` for why the figure is
 still the one worth quoting.
 
+**The entry and exit pages followed, and they are the cheapest case rather than another exception.** The rule
+had now been corrected twice, so it is worth stating in its final form: what keeps a dimension out is a *new*
+axis of cardinality, not cardinality itself. These two are the pathname axis for the third time, seen from
+the visit instead of the pageview — and because an entry page is a column on the session, they enter as two
+more grouping sets in the statement that already reads the day rather than as another pass over it. They are
+also the first rolled up dimensions to carry every column: visits, bounces and a duration sum are questions a
+page cannot be asked and a visit answers directly, so leaving them null as `PAGE` does would have meant a
+second pass over the sessions to store less. Measured at render level: a twelve-month render went from 26.2 s
+to 17.2 s, the two cards from 3.8 s and 4.0 s to 148 ms and 62 ms, while the table went from 460 MB to 887 MB
+and a full 712-day backfill from 156 s to 236 s. Exactness was checked rather than argued, which matters
+because for these two the premise holds *by construction* — a session row has one `started_at` — and the
+round before this one is the reason an argument is no longer accepted in place of a figure: over a 365-day
+window the rollup's sums, the same days counted live and one count over the whole window agree to the unit
+for every busy entry and exit page. The entry figures also differ from the exit ones, which is what proves
+the two grouping sets did not end up swapped — a failure that would have produced a perfectly plausible
+dashboard.
+
+Migrating it is one statement and no DDL: the watermark goes back to the beginning. That is also what makes
+the deploy safe in the only direction that matters — a null watermark means nothing at all is read from the
+rollup (`Coverage`), so every dimension is counted live until the job has rebuilt, and api does not start
+until processor is healthy and its migrations have run. The transition is slower, never wrong.
+
 That brought out a dependency worth stating plainly, because it is the premise this whole amendment rests
 on and it is enforced somewhere else entirely: **a `visitor_hash` must belong to exactly one UTC day.** For
 sessions that is free — a row has one `started_at`. For events it is true only because ingest computes the

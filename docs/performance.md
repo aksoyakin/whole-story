@@ -617,17 +617,77 @@ did. A re-seed therefore left 2.28M rollup rows describing the *previous* corpus
 claiming to cover them, so every rolled-up report would have been answered from data belonging to a different
 corpus while looking entirely normal. Both the table and the watermark are reset now.
 
+### The entry and exit pages follow, and they are the cheap case
+
+The round above ended by naming these two the easy ones: session-backed, cardinality the same order as the
+pages', and the page's own measurement standing as the argument that the cardinality is affordable. That is
+what they turned out to be, and they are cheaper on the write side than the page was. A page belongs to a
+pageview, so `PAGE` needed a statement of its own over the events. An entry page belongs to the visit, so
+these two are **two more grouping sets in the statement that already reads the day** — no extra pass, and the
+day's additional cost is two aggregates over rows that were being read anyway.
+
+They also carry every column, where a page row leaves four of them null. Visits, bounces and the duration sum
+are questions a page cannot be asked and a visit answers directly, so the figures are real, and the statement
+computes them whether or not anything reads them today. Splitting them out to store less would have cost a
+second pass over the sessions, which is more than the four bigints it would save.
+
+**The baseline was re-measured rather than carried over.** The corpus was re-seeded between the two rounds to
+fix the invariant the page rollup rests on (above), so the previous round's 24,445 ms describes a corpus that
+no longer exists. Same method as before: same corpus, two arms, five iterations, median, ten cards.
+
+| twelve months, nothing filtered | before | after | |
+|---|---:|---:|---:|
+| **a whole render, all fourteen requests** | **26,204 ms** | **17,190 ms** | **−34%** |
+| entry page breakdown | 3,816 ms | **148 ms** | −96% |
+| exit page breakdown | 3,964 ms | **62 ms** | −98% |
+| goals | 12,004 ms | 10,472 ms | −13% |
+| timeseries | 5,394 ms | 4,971 ms | −8% |
+| summary | 464 ms | 419 ms | −10% |
+| page breakdown | 186 ms | 251 ms | +35% |
+| **the same render, filtered (control)** | **29,933 ms** | **27,271 ms** | **−8.9%** |
+
+The two cards went from 7.78 s to 0.21 s, so 7.6 s of the render's 9.0 s is attributable to them. The
+remaining 1.4 s is not: the control arm moved 8.9%, and a filtered report cannot read the rollup at all, so
+that is what run-to-run variation looked like on this run. It is a much wider floor than the 1.6% the last
+round's control gave, which is the reason the small movements in the table above — the page's +35% among them,
+65 ms on a 17 s render — are reported rather than explained. Only differences well clear of that floor are
+claims here.
+
+**Fast is not the same as right, which is the lesson this corpus taught once already.** For a dimension
+counted from the sessions the premise holds by construction — a session row has one `started_at`, so one
+visitor hash belongs to one UTC day — but "by construction" is an argument, and the point of the last round
+was that an argument is not a measurement. Over a 365-day window of whole UTC days, for the five busiest
+entry pages and the four busiest exit pages, all three figures agree exactly:
+
+| entry page | rollup summed | the same days, live | one count over the window |
+|---|---:|---:|---:|
+| `/` | 991,104 | 991,104 | 991,104 |
+| `/pricing` | 276,401 | 276,401 | 276,401 |
+| `/docs` | 195,124 | 195,124 | 195,124 |
+
+The exit pages agree the same way, and their numbers are not the entry pages' — `/` is 991,396 against
+991,104 — which is the check that the two grouping sets did not end up swapped. That failure would have been
+invisible otherwise: both are paths, both are grouped identically, and a dashboard labelling its most common
+landing page as the page people leave from looks entirely plausible. The regression test makes the same
+assertion at fixture scale with deliberately unequal counts, because equal ones would not notice.
+
+What it cost: the table went from 460 MB to 887 MB and from 2.28M rows to 4.04M, the two new dimensions being
+879,767 and 879,993 rows against the pages' 1,040,394. That ratio is the thing worth keeping — 1.7 pages per
+path per day rather than the 2 an upper bound would assume, because not every path is an entry or an exit
+every day. Filling 712 days went from 156 s to 236 s, though the two are not a clean comparison: the earlier
+run wrote into an empty table while this one re-ran eight dimensions as no-ops on top of inserting two.
+
 ### What is slow now
 
-A render over a twelve-month range is 24.4 s, and four endpoints are 23.5 of them: the goals at 10.8 s, the
-timeseries at 5.5 s, and the entry and exit page cards at 3.9 and 3.3 s. Thirty days, which is the longest
-the dashboard itself offers, is a twentieth of that.
+A render over a twelve-month range is 17.2 s, and two endpoints are 15.4 of them: the goals at 10.5 s and the
+timeseries at 5.0 s. Everything else together is under 1.2 s. Thirty days, which is the longest the three
+period buttons offer, is a twentieth of that.
 
-The goals are the big one and the hardest: a goal is defined by whoever owns the site, at any time, and
-reports history from before it existed (D-122), so there is nothing to have pre-aggregated. The entry and
-exit pages are the easy one and were not done here only because they were out of scope: they are
-session-backed, their cardinality is the same order as the pages', and the measurement above is the argument
-that the cardinality is affordable. The timeseries is the structural one, for the reason given further up.
+Both of the remaining two are hard, and for different reasons. The goals are hard because there is nothing to
+pre-aggregate: a goal is defined by whoever owns the site, at any time, and reports history from before it
+existed (D-122). The timeseries is hard because of where two decisions meet — its buckets are the site's own
+local days (ADR 0020) and the rollup's grain is the UTC day (ADR 0005), and one local day straddles two UTC
+days, so a daily rollup cannot answer it at any price. The cheap dimensions are now all taken.
 
 ### Two mistakes in the measuring, both of which read as good news
 
