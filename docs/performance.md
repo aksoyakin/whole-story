@@ -322,7 +322,8 @@ asserts `show plan_cache_mode` on a pooled connection, and was checked the only 
 by taking the line out and watching it fail with `but was: "auto"`.
 
 It does not make the dashboard fast. A thirty-day render still asks for about eight seconds of database work,
-and that remains the open question.
+and that was the open question — answered two sections below, where the daily visitor rollup takes it to 4.3 s
+and a twelve-month render from seventy seconds to forty.
 
 ### An optimisation that measured twice as fast and changed nothing
 
@@ -356,6 +357,124 @@ So the change was reverted: a wider contract, a nested response shape, two SQL p
 in the web client, in exchange for nothing measurable. What is kept is the finding, and the habit that
 produced it — the sequencing was deliberately "put it behind the endpoint and measure a render", precisely
 because a query measured on its own is not the same query in its place.
+
+### Unique visitors turn out to be additive, and that changes what is worth building
+
+The remaining cost is dominated by counting distinct visitors over a range, which ADR 0007 says no rollup can
+hold. Measured, that is true of hours and false of days, because ADR 0005 rotates the hashing salt every UTC
+day: the same person is a different hash tomorrow, so two days hold disjoint sets and a range's distinct count
+is the sum of its days'. Exactly — not approximately.
+
+| thirty days, one site | unique visitors |
+|---|---:|
+| counted live over the range | **54,176** |
+| summed from per-UTC-day counts | **54,176** |
+| summed from per-*local*-day counts | 62,864 (+16%) |
+
+Per country, across 193 of them, the difference between the live count and the summed one was zero. So the
+rollup can hold a breakdown too, and it holds it exactly rather than as a sketch.
+
+Two conditions, both sharp. The grain has to be the UTC day, since that is the salt's grain — the local-day
+figure above shows what happens otherwise. And a site's own day does not align with it (ADR 0020), so the
+range a dashboard asks for begins and ends partway through a UTC day:
+
+| thirty days, Istanbul window | unique visitors |
+|---|---:|
+| counted live (the right answer) | **53,265** |
+| summed from whole overlapping UTC days | 54,176 (1.7% high, and silent) |
+| interior days from the rollup, two edge days counted live | **53,265** |
+
+What it would buy, on this corpus: the summary's visitor count goes from 17.7 ms to 0.1, a country breakdown
+from 58.5 ms to 1.0, and neither grows with the number of events — a rollup is sized by days times distinct
+values, so the same figures would hold against fifty million rows where the live queries cost around 340 ms.
+
+What it would not cover is worth saying first: anything filtered, since a filter on one dimension cannot be
+answered from another's rollup without pre-aggregating the combinations; the goals, which are user-defined and
+report history from the day they are created (D-122); and the page breakdown, which is grouped from events
+rather than sessions and would need a rollup of its own. That leaves roughly the session-backed half of a
+render — an estimate, and after the grouping-sets result above, one nobody should believe until it is measured
+as a render.
+
+### Building it, and what the render actually did
+
+The estimate above was roughly right about the half it could see and silent about the rest, which is the
+reason it was not trusted. What was built is a table of one row per site, per UTC day, per dimension value,
+holding that day's distinct visitors alongside its visits, pageviews, bounces and duration; a watermark row
+saying how far it is known to be complete; and a reader that takes the whole interior UTC days of a range
+from it and counts the two partial days at the edges live.
+
+The measurement is a before and an after of the same binary against the same corpus, a minute apart. Nothing
+was rebuilt between them and no setting was touched: the only difference is whether the table had been filled
+and the watermark moved. The filtered arm is the control, because a filtered report never reads the rollup —
+if it moved, something other than the rollup moved with it.
+
+Milliseconds, median of five, one request at a time, 49.4M events over 24 months:
+
+| endpoint | 30d before | 30d after | | 12m before | 12m after | |
+|---|---:|---:|---:|---:|---:|---:|
+| summary | 390 | **108** | −72% | 3,033 | **790** | −74% |
+| breakdown, source | 377 | **21** | −94% | 3,586 | **421** | −88% |
+| breakdown, country | 338 | **14** | −96% | 3,468 | **116** | −97% |
+| breakdown, region | 482 | **13** | −97% | 5,195 | **95** | −98% |
+| breakdown, city | 476 | **14** | −97% | 5,350 | **82** | −98% |
+| breakdown, browser | 350 | **7** | −98% | 3,787 | **19** | −99.5% |
+| breakdown, os | 349 | **8** | −98% | 3,578 | **13** | −99.6% |
+| breakdown, device | 361 | **5** | −99% | 3,599 | **8** | −99.8% |
+| breakdown, page | 1,836 | 1,882 | +3% | 19,053 | 19,502 | +2% |
+| timeseries | 572 | 595 | +4% | 5,168 | 5,470 | +6% |
+| goals | 1,650 | 1,641 | −1% | 12,526 | 14,434 | +15% |
+| **whole dashboard** | **7,227** | **4,349** | **−40%** | **69,969** | **40,144** | **−43%** |
+| whole dashboard, filtered *(control)* | 2,205 | 2,231 | +1% | 28,054 | 29,106 | +4% |
+
+Seven breakdowns and the summary; a twelve-month dashboard from seventy seconds to forty. The endpoints the
+rollup answers stopped growing with the range: a twelve-month browser breakdown is now 19 ms against a
+thirty-day one at 7, where before it was 3,787 against 350. That is the point of the table rather than a
+side effect of it — the figures are sized by days times distinct values, not by events.
+
+The control arm is the part worth reading twice. It moved by +1% and +4%, which is small but is not zero, and
+every endpoint the rollup does not serve moved the same way: the page breakdown +2%, the timeseries +6%, the
+goals +15%. The rollup is 253 MB and the database is 21 GB against a 128 MB `shared_buffers`, so a new table
+that every report touches is new competition for cache, and the queries that gained nothing from it paid for
+it. The honest summary is that this bought 30 s on a twelve-month render and cost something under 2 s
+elsewhere, not that it was free.
+
+What it cost to keep: 1.24M rows and 253 MB against 16.7M sessions and 5 GB, so about a twentieth. Filling it
+for 712 days took 93 s of work, 131 ms per day, though the job paces itself at thirty days per ten-minute
+run and a two-year backfill therefore takes about four hours of wall clock. Nothing waits for it: a day the
+rollup has not reached is counted live, which is what the thirty-day column's *before* figures already are.
+
+### A bug this found, which no test and no measurement would have
+
+The reader's first version sent every session-backed dimension to the rollup. The writer computes seven of
+them. The other seven — entry page, exit page and the five UTM dimensions — are left out deliberately,
+because a row per campaign or per entry page per day would make the table a second copy of the sessions
+rather than a summary of them.
+
+Asking the table for a dimension it does not hold does not fail. It returns no rows, and the reader adds no
+rows to the two partial days at the edges of the range, so a twelve-month entry-page breakdown would have
+come back holding two days of data and looking entirely ordinary. The dashboard does not draw those cards
+yet, which is the only reason it was not shipped.
+
+What it changed: the set is now a property of each dimension rather than something inferred from which table
+it lives on, and both services pin the same seven names in a test, since the two halves are in different
+services and nothing else makes them move together. Inferring it was the bug — every one of the fourteen is
+session-backed, so the property that mattered was not visible in the thing being asked.
+
+The same build also found a day could be counted too early. A day is counted once and never recounted, so a
+session that started at 23:58 and was still being extended after midnight, or a batch delayed by consumer
+lag, would be missing from a figure that is never corrected. A day is now left for an hour after it ends
+before it is counted, which costs an hour of answering yesterday from the sessions and nothing else. The
+hourly rollups never needed this, because they add to a running total and a late batch simply adds to it; a
+distinct count is not a total you can add to, which is the whole reason this table exists.
+
+### What is slow now
+
+The twelve-month dashboard is forty seconds, and three endpoints are thirty-nine of them: the page breakdown
+at 19.5 s, the goals at 14.4 s and the timeseries at 5.5 s. All three are grouped from events rather than
+sessions, which is 49M rows against 16.7M, and none of them is a distinct count that a daily grain would
+fix in the same way — the timeseries is cut in the site's own timezone, and the goals are user-defined. That
+is the next thing to measure, and the figure to beat is now the one in the table above rather than the one
+this section started with.
 
 ### Two mistakes in the measuring, both of which read as good news
 
@@ -444,13 +563,27 @@ infra/k6/read-path-timings.sh 7d
 infra/k6/read-path-timings.sh 30d
 REPS=3 infra/k6/read-path-timings.sh 12m
 
-# 4. Ask why, once a number is worth explaining. This one prints plans instead of timings.
+# 4. The render-level before and after of the daily visitor rollup. Order matters: the stack is left as it
+#    was built, so the two arms differ only in whether the rollup is filled. processor is stopped because
+#    its scheduled job would otherwise begin filling the table during the *before* arm.
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml stop processor
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml \
+  run --rm -e PERIODS=30d,12m -e ITERATIONS=5 k6          # before: the table is empty
+cp infra/k6/results/read-path.json infra/k6/results/before.json
+infra/k6/backfill-visitor-daily.sh                        # 712 days in about 95 seconds
+docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
+  -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml \
+  run --rm -e PERIODS=30d,12m -e ITERATIONS=5 k6          # after
+
+# 5. Ask why, once a number is worth explaining. This one prints plans instead of timings.
 infra/k6/read-path-queries.sh 30d
 
-# 5. The same with one setting changed, which is the only honest way to attribute a difference to it.
+# 6. The same with one setting changed, which is the only honest way to attribute a difference to it.
 WORK_MEM=64MB infra/k6/read-path-timings.sh 30d
 
-# 6. Tear it down.
+# 7. Tear it down.
 docker compose -p wholestory-readpath --env-file infra/k6/loadtest.env \
   -f infra/docker-compose.prod.yml -f infra/k6/docker-compose.readpath.yml down -v
 docker network rm dokploy-network
@@ -463,9 +596,12 @@ schema ownership is the boundary (D-012, D-037).
 
 ## Not measured yet
 
-- **Where the read path's HTTP overhead comes from.** It was measured and it is not small — a 30-day render
-  costs 6.6 seconds of database work and 17.4 seconds end to end — but the cause is not established, and the
-  summed figure it is compared against prices seven of the breakdown cards by proxy.
+- **What the page breakdown, the goals and the timeseries cost, and whether a rollup can help them.** They
+  are 39 of the 40 seconds a twelve-month render now takes. All three are grouped from events rather than
+  sessions, and none is a distinct count that the daily grain would fix the same way.
+- **Where the read path's remaining HTTP overhead comes from.** The gap between summed database work and the
+  end-to-end figure was mostly the generic plan, which is fixed above; what is left has not been accounted
+  for, and the summed figure it is compared against prices seven of the breakdown cards by proxy.
 - **The production server's capacity.** The VPS has far more memory and a different architecture.
 - **More than one ingest replica.** Horizontal scaling is the premise of ADR 0002 and is untested.
 - **The public path's capacity.** It was exercised in production at a trivial rate — 31 events through
