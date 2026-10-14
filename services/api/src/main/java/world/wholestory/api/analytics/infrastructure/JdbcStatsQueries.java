@@ -17,6 +17,7 @@ import world.wholestory.api.analytics.application.TimeseriesPoint;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -141,6 +142,72 @@ class JdbcStatsQueries implements StatsQueries {
             group by 1
             """;
 
+    /**
+     * The same two questions, answered from the daily rollup wherever it reaches.
+     * <p>
+     * Whole UTC days come from {@code visitor_daily} and the partial days at the edges are still counted from
+     * the sessions, which is what keeps the figure exact: visitors add up across days only because the salt
+     * rotates daily (D-159), and a site's day does not begin on a UTC midnight (ADR 0020). The three parts
+     * tile the range with no gap and no overlap — {@link Coverage} works that out and is tested on its own,
+     * because a gap here loses visitors and an overlap doubles them, and both just look like a number.
+     * <p>
+     * Only used when nothing is filtered. A filter on one dimension cannot be answered from another's rollup
+     * without pre-aggregating every combination, so a filtered report reads the sessions as it always did.
+     */
+    private static final String SUMMARY_FROM_ROLLUP = """
+            select v.visitors,
+                   v.visits,
+                   case when v.visits = 0 then 0 else v.bounces::numeric / v.visits end      as bounce_rate,
+                   case when v.visits = 0 then 0 else v.duration_sum::numeric / v.visits end as avg_duration,
+                   p.pageviews
+            from (select coalesce(sum(visitors), 0)     as visitors,
+                         coalesce(sum(visits), 0)       as visits,
+                         coalesce(sum(bounces), 0)      as bounces,
+                         coalesce(sum(duration_sum), 0) as duration_sum
+                  from (select visitors, visits, bounces, duration_sum
+                        from analytics.api_visitor_daily
+                        where site_id = :siteId and dimension = 'TOTAL'
+                          and utc_day >= :rollupFrom and utc_day < :rollupTo
+                        union all
+                        select count(distinct s.visitor_hash), count(*),
+                               count(*) filter (where s.is_bounce), coalesce(sum(s.duration_seconds), 0)
+                        from analytics.api_sessions s
+                        where s.site_id = :siteId and s.started_at >= :headFrom and s.started_at < :headTo
+                        union all
+                        select count(distinct s.visitor_hash), count(*),
+                               count(*) filter (where s.is_bounce), coalesce(sum(s.duration_seconds), 0)
+                        from analytics.api_sessions s
+                        where s.site_id = :siteId and s.started_at >= :tailFrom and s.started_at < :tailTo) parts) v
+            cross join (%s) p
+            """;
+
+    private static final String BREAKDOWN_FROM_ROLLUP = """
+            select key,
+                   max(label)                  as label,
+                   coalesce(sum(visitors), 0)  as visitors,
+                   coalesce(sum(visits), 0)    as visits,
+                   coalesce(sum(pageviews), 0) as pageviews
+            from (select value as key, label, visitors, visits, pageviews
+                  from analytics.api_visitor_daily
+                  where site_id = :siteId and dimension = :dimension
+                    and utc_day >= :rollupFrom and utc_day < :rollupTo
+                  union all
+                  select coalesce(s.%1$s::text, ''), %2$s, count(distinct s.visitor_hash), count(*),
+                         coalesce(sum(s.pageviews), 0)
+                  from analytics.api_sessions s
+                  where s.site_id = :siteId and s.started_at >= :headFrom and s.started_at < :headTo
+                  group by 1, 2
+                  union all
+                  select coalesce(s.%1$s::text, ''), %2$s, count(distinct s.visitor_hash), count(*),
+                         coalesce(sum(s.pageviews), 0)
+                  from analytics.api_sessions s
+                  where s.site_id = :siteId and s.started_at >= :tailFrom and s.started_at < :tailTo
+                  group by 1, 2) parts
+            group by key
+            order by visitors desc, key
+            limit :limit
+            """;
+
     /** One session row carries visitors, visits and pageviews together, so these need a single pass. */
     private static final String BREAKDOWN_BY_SESSION = """
             select coalesce(s.%s::text, '')        as key,
@@ -194,17 +261,30 @@ class JdbcStatsQueries implements StatsQueries {
     @Override
     public SummaryStats summary(UUID siteId, DateRange range, List<Filter> filters) {
         FilterClauses clauses = FilterClauses.of(filters);
+        if (!clauses.any()) {
+            Coverage coverage = coverageOf(range);
+            if (coverage.usesRollup()) {
+                return bindCoverage(bind(SUMMARY_FROM_ROLLUP.formatted(PAGEVIEWS_FROM_ROLLUP),
+                                siteId, range, clauses), coverage)
+                        .query((rs, row) -> summaryOf(rs))
+                        .single();
+            }
+        }
         String pageviews = clauses.any()
                 ? PAGEVIEWS_FROM_EVENTS.formatted(events(clauses))
                 : PAGEVIEWS_FROM_ROLLUP;
         return bind(SUMMARY.formatted(sessions(clauses), pageviews), siteId, range, clauses)
-                .query((rs, row) -> new SummaryStats(
-                        rs.getLong("visitors"),
-                        rs.getLong("visits"),
-                        rs.getLong("pageviews"),
-                        rs.getDouble("bounce_rate"),
-                        rs.getDouble("avg_duration")))
+                .query((rs, row) -> summaryOf(rs))
                 .single();
+    }
+
+    private static SummaryStats summaryOf(ResultSet rs) throws SQLException {
+        return new SummaryStats(
+                rs.getLong("visitors"),
+                rs.getLong("visits"),
+                rs.getLong("pageviews"),
+                rs.getDouble("bounce_rate"),
+                rs.getDouble("avg_duration"));
     }
 
     @Override
@@ -231,24 +311,60 @@ class JdbcStatsQueries implements StatsQueries {
                                           List<Filter> filters) {
         FilterClauses clauses = FilterClauses.of(filters);
         boolean fromEvents = dimension.source() == Dimension.Source.EVENTS;
+        if (dimension.rolledUp() && !clauses.any()) {
+            Coverage coverage = coverageOf(range);
+            if (coverage.usesRollup()) {
+                String label = dimension.labelColumn() == null ? "null::text" : "s." + dimension.labelColumn();
+                String sql = BREAKDOWN_FROM_ROLLUP.formatted(dimension.keyColumn(), label);
+                return bindCoverage(bind(sql, siteId, range, clauses), coverage)
+                        .param("dimension", dimension.name())
+                        .param("limit", limit)
+                        .query((rs, row) -> entryOf(rs))
+                        .list();
+            }
+        }
         String alias = fromEvents ? "e." : "s.";
         String label = dimension.labelColumn() == null ? "null::text" : alias + dimension.labelColumn();
         String sql = (fromEvents ? BREAKDOWN_BY_EVENT : BREAKDOWN_BY_SESSION)
                 .formatted(dimension.keyColumn(), label, fromEvents ? events(clauses) : sessions(clauses));
         return bind(sql, siteId, range, clauses)
                 .param("limit", limit)
-                .query((rs, row) -> {
-                    String key = rs.getString("key");
-                    String name = rs.getString("label");
-                    // Always a label: the client should not have to decide what to print when there is none.
-                    return new BreakdownEntry(
-                            key,
-                            name == null || name.isBlank() ? key : name,
-                            rs.getLong("visitors"),
-                            rs.getLong("visits"),
-                            rs.getLong("pageviews"));
-                })
+                .query((rs, row) -> entryOf(rs))
                 .list();
+    }
+
+    /** Always a label: the client should not have to decide what to print when there is none. */
+    private static BreakdownEntry entryOf(ResultSet rs) throws SQLException {
+        String key = rs.getString("key");
+        String label = rs.getString("label");
+        return new BreakdownEntry(
+                key,
+                label == null || label.isBlank() ? key : label,
+                rs.getLong("visitors"),
+                rs.getLong("visits"),
+                rs.getLong("pageviews"));
+    }
+
+    /**
+     * How far the rollup reaches. One small read per report; an absent row or a null watermark means it has
+     * never run, and then everything is counted live exactly as before.
+     */
+    private Coverage coverageOf(DateRange range) {
+        LocalDate covered = jdbc.sql("select covered_through from analytics.api_visitor_daily_watermark")
+                .query(LocalDate.class)
+                .optional()
+                .orElse(null);
+        return Coverage.of(range.start(), range.endExclusive(), covered);
+    }
+
+    private static JdbcClient.StatementSpec bindCoverage(JdbcClient.StatementSpec statement, Coverage coverage) {
+        return statement
+                .param("rollupFrom", coverage.rollupFrom())
+                .param("rollupTo", coverage.rollupTo())
+                .param("headFrom", at(coverage.headFrom()))
+                .param("headTo", at(coverage.headTo()))
+                .param("tailFrom", at(coverage.tailFrom()))
+                .param("tailTo", at(coverage.tailTo()));
     }
 
     @Override

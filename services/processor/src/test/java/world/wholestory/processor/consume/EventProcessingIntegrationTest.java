@@ -270,7 +270,8 @@ class EventProcessingIntegrationTest {
                         order by table_name""")
                 .query(String.class).list();
 
-        assertThat(tables).containsExactly("api_custom_event_hourly", "api_events", "api_page_hourly", "api_sessions");
+        assertThat(tables).containsExactly("api_custom_event_hourly", "api_events", "api_page_hourly",
+                "api_sessions", "api_visitor_daily", "api_visitor_daily_watermark");
     }
 
     private long count(String sql, UUID siteId) {

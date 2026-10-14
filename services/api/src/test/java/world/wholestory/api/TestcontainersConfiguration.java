@@ -35,7 +35,11 @@ public class TestcontainersConfiguration {
                         "/docker-entrypoint-initdb.d/03-analytics-bounce.sql")
                 .withCopyFileToContainer(
                         MountableFile.forHostPath("../processor/src/main/resources/db/migration/V3__geo_names.sql"),
-                        "/docker-entrypoint-initdb.d/04-analytics-geo-names.sql");
+                        "/docker-entrypoint-initdb.d/04-analytics-geo-names.sql")
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath(
+                                "../processor/src/main/resources/db/migration/V4__visitor_daily.sql"),
+                        "/docker-entrypoint-initdb.d/05-analytics-visitor-daily.sql");
     }
 
     /** The outbox externalizes site events to Kafka (ADR 0009). */

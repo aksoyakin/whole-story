@@ -61,6 +61,17 @@ class StatsIntegrationTest {
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         seed = JdbcClient.create(dataSource);
         ensurePartitions();
+        startFromNothingRolledUp();
+    }
+
+    /**
+     * The rollup and its watermark are one shared state for the whole database, so a test that left either
+     * behind would change what the next one measures — and since the rollup is meant to be invisible, it
+     * would change it without anything looking wrong. The same reset guards the processor's own tests.
+     */
+    private void startFromNothingRolledUp() {
+        seed.sql("delete from analytics.visitor_daily").update();
+        seed.sql("update analytics.visitor_daily_watermark set covered_through = null").update();
     }
 
     @Test
@@ -207,6 +218,117 @@ class StatsIntegrationTest {
         mvc.perform(breakdown(site, "SOURCE"))
                 .andExpect(jsonPath("$[?(@.key == '')].visitors").value(1))
                 .andExpect(jsonPath("$[?(@.key == 'Google')].visitors").value(2));
+    }
+
+    /**
+     * The rollup is an accelerator, never an authority: the same range has to come back with exactly the same
+     * numbers whether it is read from the daily table or counted from the sessions.
+     * <p>
+     * It only adds up because the hashing salt rotates every UTC day (D-159), so each day below gets its own
+     * visitor hashes exactly as production produces them. The range is five Istanbul days, which begins and
+     * ends at 21:00 UTC — so four whole UTC days come from the rollup and the two partial ones at the edges
+     * are still counted live, which is the case worth testing.
+     */
+    @Test
+    void theDailyRollupAnswersExactlyWhatCountingTheSessionsWould() throws Exception {
+        Site site = registerSite();
+        // 2026-10-01 .. 2026-10-05 in Istanbul spans 2026-09-30T21:00Z to 2026-10-05T21:00Z.
+        sessionWith(site.id(), 11L, "2026-09-30T22:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 21L, "2026-10-01T10:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "mobile", "Google");
+        sessionWith(site.id(), 22L, "2026-10-01T18:00:00Z", "DE", "DE-BE", "Berlin", 2950159, "Firefox", "desktop", null);
+        sessionWith(site.id(), 31L, "2026-10-02T09:00:00Z", "TR", "TR-06", "Ankara", 323786, "Safari", "mobile", "Bing");
+        sessionWith(site.id(), 41L, "2026-10-03T09:00:00Z", "DE", "DE-BE", "Berlin", 2950159, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 51L, "2026-10-04T09:00:00Z", "TR", "TR-34", "Istanbul", 745044, "Chrome", "tablet", null);
+        sessionWith(site.id(), 61L, "2026-10-05T20:00:00Z", "TR", "TR-06", "Ankara", 323786, "Firefox", "desktop", "Google");
+
+        String live = json(stats(site, "summary", "2026-10-01", "2026-10-05", site.session()));
+        String liveCountries = breakdownOver(site, "COUNTRY", "2026-10-01", "2026-10-05");
+
+        rollUp("2026-10-01");
+        rollUp("2026-10-02");
+        rollUp("2026-10-03");
+        rollUp("2026-10-04");
+        seed.sql("update analytics.visitor_daily_watermark set covered_through = date '2026-10-04'").update();
+
+        assertThat(json(stats(site, "summary", "2026-10-01", "2026-10-05", site.session())))
+                .as("a summary must not change because part of it came from the rollup")
+                .isEqualTo(live);
+        assertThat(breakdownOver(site, "COUNTRY", "2026-10-01", "2026-10-05"))
+                .as("nor must a breakdown")
+                .isEqualTo(liveCountries);
+    }
+
+    /**
+     * The rollup holds seven dimensions, not every dimension a visit has. An entry page is not one of them,
+     * and asking the table for one returns nothing rather than failing — so without the guard this breakdown
+     * would come back holding only the two partial days at the edges of the range, which is a figure that is
+     * wrong by most of the range and looks perfectly ordinary.
+     */
+    @Test
+    void aDimensionTheRollupDoesNotHoldIsStillCountedFromTheSessions() throws Exception {
+        Site site = registerSite();
+        sessionWith(site.id(), 81L, "2026-10-01T10:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 82L, "2026-10-02T10:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
+        sessionWith(site.id(), 83L, "2026-10-03T10:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
+
+        String live = breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05");
+
+        rollUp("2026-10-01");
+        rollUp("2026-10-02");
+        rollUp("2026-10-03");
+        rollUp("2026-10-04");
+        seed.sql("update analytics.visitor_daily_watermark set covered_through = date '2026-10-04'").update();
+
+        assertThat(breakdownOver(site, "ENTRY_PAGE", "2026-10-01", "2026-10-05")).isEqualTo(live);
+    }
+
+    /** A watermark that has not reached the range leaves every day to be counted live, as before. */
+    @Test
+    void aRollupThatHasNotCaughtUpChangesNothing() throws Exception {
+        Site site = registerSite();
+        sessionWith(site.id(), 71L, "2026-10-02T09:00:00Z", "TR", "TR-06", "Ankara", 323786, "Chrome", "desktop", "Google");
+
+        String before = json(stats(site, "summary", "2026-10-01", "2026-10-05", site.session()));
+        seed.sql("update analytics.visitor_daily_watermark set covered_through = date '2026-01-01'").update();
+
+        assertThat(json(stats(site, "summary", "2026-10-01", "2026-10-05", site.session()))).isEqualTo(before);
+    }
+
+    /** One finished UTC day, the way the processor computes it; its own tests cover that SQL. */
+    private void rollUp(String utcDay) {
+        // The fourth entry is what to group by: a total groups by nothing but the site, and PostgreSQL will
+        // not take the constant '' as a grouping key.
+        for (String[] dimension : new String[][] {
+                {"TOTAL", "''", "null::text", ""},
+                {"COUNTRY", "coalesce(country_code::text, '')", "null::text", ", country_code"},
+                {"BROWSER", "coalesce(browser, '')", "null::text", ", browser"},
+                {"REGION", "coalesce(subdivision_code, '')", "max(subdivision_name)", ", subdivision_code"}}) {
+            seed.sql("""
+                            insert into analytics.visitor_daily
+                                (site_id, utc_day, dimension, value, label, visitors, visits, pageviews,
+                                 bounces, duration_sum)
+                            select site_id, date '%s', '%s', %s, %s,
+                                   count(distinct visitor_hash), count(*), coalesce(sum(pageviews), 0),
+                                   count(*) filter (where pageviews < 2 and events = pageviews),
+                                   coalesce(sum(duration_seconds), 0)
+                            from analytics.sessions
+                            where started_at >= timestamptz '%s 00:00:00+00'
+                              and started_at <  timestamptz '%s 00:00:00+00' + interval '1 day'
+                            group by site_id%s
+                            """.formatted(utcDay, dimension[0], dimension[1], dimension[2], utcDay, utcDay,
+                            dimension[3]))
+                    .update();
+        }
+    }
+
+    private String breakdownOver(Site site, String dimension, String from, String to) throws Exception {
+        return json(get("/api/sites/{siteId}/stats/breakdown", site.id())
+                .param("dimension", dimension).param("from", from).param("to", to)
+                .cookie(site.session()));
+    }
+
+    private String json(MockHttpServletRequestBuilder request) throws Exception {
+        return mvc.perform(request).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
     }
 
     /** A page belongs to a pageview, not to a visit, so this breakdown is grouped from the events. */
