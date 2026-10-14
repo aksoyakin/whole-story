@@ -52,10 +52,41 @@ being behind costs speed and not correctness. A day is counted an hour after it 
 because it is counted once and never recounted, and a session that began at 23:58 is still being extended
 after midnight.
 
-One limitation comes with counting a day once: an outage longer than that hour means sessions arrive for a
-day already counted, and they are never picked up, so reports over a range containing that day are short by
-them. The remedy — marking a day dirty when a batch lands behind it and recomputing it — is not built, and
-the gauge saying how far behind the rollup is will not show this, because the rollup is not behind.
+One limitation came with counting a day once: an outage longer than that hour means sessions arrive for a
+day already counted, and they were never picked up, so reports over a range containing that day were short
+by them. The gauge saying how far behind the rollup is did not show it either, because the rollup was not
+behind — it was wrong, which is worse.
+
+**That is now built, and the shape of the fix is the interesting part.** A day can be counted again: the
+writer marks a day whenever it stores a batch belonging to one the watermark already claims, in the same
+transaction as the rows themselves, and the job recomputes marked days with an upsert rather than skipping
+them on conflict. In healthy operation nothing is ever marked — a batch belongs to today, and today is
+always beyond the watermark — so the mechanism costs a predicate that matches nothing.
+
+Three things about it are worth stating, because each was a choice rather than a detail:
+
+- **The grace period changed meaning rather than becoming redundant.** It used to be the only defence, so it
+  had to be long enough to cover every late arrival. Now it keeps the common case to a single computation:
+  without it, the visits still being extended between midnight and 00:30 would mark every single day for
+  recomputation. Being generous with it is cheap; being wrong with it is no longer permanent.
+- **Marks are per day, not per site.** A site filter would need a second variant of both compute statements —
+  a third definition of the rollup, and the one nobody updates. A day's recompute is the work the job does
+  for every day anyway.
+- **The job clears a mark by matching the mark it read, not by day.** A batch landing while a day is being
+  recomputed may be outside that recompute's snapshot, so its mark has to survive; a re-mark changes the
+  value and the delete finds nothing. The marks are sequence numbers rather than timestamps so that this is
+  exact rather than a question about clock resolution.
+
+What it does not do is make a report correct the instant a late batch lands: a marked day is still answered
+from the rollup until the job's next run. That window is bounded by the run interval, where before it was
+bounded by nothing.
+
+**A second defect turned up next to it, and it is the same family.** Removing a site purges the analytics
+schema (ADR 0023), and `visitor_daily` was never added to the list of tables it purges — so for three rounds
+a removed site kept a row per day per dimension value while every check said its data was gone. Nothing
+caught it: the integration test counted exactly the tables the purger names, so it asserted the
+implementation rather than the promise, and the live verification query was written from the same list. Both
+now name every table keyed by site, and the test fails if the purger forgets one.
 
 Measured at render level: a render over a twelve-month range went from 70 s to 40 s and a thirty-day one
 from 7.2 s to 4.3 s, with the endpoints it answers between 72% and 99.8% faster and no longer growing with the range. It

@@ -134,6 +134,36 @@ psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZ
 
 Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
+## Clearing what an earlier purge left behind
+
+`visitor_daily` was missing from the purge for as long as it has existed, so a database that removed a site
+before this was fixed still holds that site's daily rollup rows ([ADR 0023](adr/0023-deleting-the-data-of-a-removed-site.md)).
+The migration cannot clean them up: the processor owns the analytics schema but has no access to `sites`, so
+it cannot tell which site ids were removed.
+
+The topic can. `site-purge` is compacted and keyed on the site id, so it still holds one purge record for
+every site ever removed — reading it from the beginning re-purges all of them, this time from every table.
+The purge is idempotent by design, so this is safe to do at any point:
+
+```bash
+# In the Kafka container. Stop the processor first: a consumer group cannot be moved while a member holds it.
+/opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --group processor --topic site-purge --reset-offsets --to-earliest --execute
+```
+
+Then start the processor and confirm from the database, counting **every** table keyed by site rather than
+the four this check used to name:
+
+```sql
+select 'events' as t, count(*) from analytics.events where site_id = '<removed site>'
+union all select 'sessions', count(*) from analytics.sessions where site_id = '<removed site>'
+union all select 'page_hourly', count(*) from analytics.page_hourly where site_id = '<removed site>'
+union all select 'custom_event_hourly', count(*) from analytics.custom_event_hourly where site_id = '<removed site>'
+union all select 'visitor_daily', count(*) from analytics.visitor_daily where site_id = '<removed site>';
+```
+
+A fresh database needs none of this; the purge has covered all five tables since the day it was fixed.
+
 ## A mounted config file needs its container restarted
 
 Grafana's dashboards and provisioning, and Prometheus' scrape configuration, are bind-mounted out of this

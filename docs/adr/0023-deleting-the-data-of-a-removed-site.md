@@ -25,7 +25,20 @@ stay and refuse. It grows by one row for every link anyone ever asks for.
 ### The purge runs in the processor, asked for over its own topic
 `api` publishes `SitePurgeV1` — the site id and when it was removed — through the transactional outbox
 ([ADR 0009](0009-transactional-outbox-with-spring-modulith.md)) to a new topic, `site-purge`. `processor`
-consumes it and deletes the site's rows from `events`, `sessions`, `page_hourly` and `custom_event_hourly`.
+consumes it and deletes the site's rows from every analytics table keyed by site: `events`, `sessions`,
+`page_hourly`, `custom_event_hourly` and `visitor_daily`.
+
+**That last one was missing for three rounds, and how it stayed missing is the part to learn from.**
+`visitor_daily` arrived later than this decision ([ADR 0007](0007-events-sessions-and-additive-rollups.md)'s
+amendment) and was not added here, so a removed site kept a row per day per dimension value — its countries,
+cities, regions and paths. No wrong number came of it, since a site id is never reused and nothing reads
+those rows, but the promise this ADR implements is that the data is gone, and it was not.
+
+Neither check in place could have caught it. The integration test counted exactly the tables the purger
+names, so it agreed with the implementation about what "everything" meant; the query used to verify a purge
+in production was written from the same list. Both now enumerate the tables independently of the purger, and
+the test fails if a table is added to the schema and not to the purge — which is what it should have done the
+first time.
 
 **It is a topic of its own, not a second use of `site-events`.** Reusing that one was the obvious move and it
 is wrong for a reason worth writing down: `site-events` is log compacted and keyed on the *domain*, because it
