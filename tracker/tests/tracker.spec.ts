@@ -106,6 +106,38 @@ test("does not count localhost", async ({ page }) => {
   expect(events).toHaveLength(0);
 });
 
+/** The opt-out that lets the product be demonstrated without the demonstrator inflating it (D-142). */
+test("does not count a browser that opted out", async ({ page }) => {
+  const events = await site(page);
+  await page.addInitScript(() => localStorage.setItem("wholestory_ignore", "1"));
+
+  await page.goto("https://site.test/");
+  await page.evaluate(() => window.wholestory?.("Signup"));
+  await page.waitForTimeout(500);
+
+  expect(events).toHaveLength(0);
+});
+
+/**
+ * Reading localStorage is not always allowed to succeed: some privacy settings make the property itself
+ * throw. A tracker is a guest on someone else's page, so it has to survive that rather than take the page
+ * down with it — and it has to keep counting, because an unreadable setting is not an opt-out.
+ */
+test("still counts when localStorage cannot be read at all", async ({ page }) => {
+  const events = await site(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new Error("access denied");
+      },
+    });
+  });
+
+  await page.goto("https://site.test/");
+
+  await expect.poll(() => events).toHaveLength(1);
+});
+
 test("stores nothing in the browser", async ({ page, context }) => {
   const events = await site(page);
   await page.goto("https://site.test/");

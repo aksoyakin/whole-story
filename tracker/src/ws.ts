@@ -4,6 +4,8 @@
  *   <script defer data-domain="example.com" src="https://wholestory.world/js/ws.js"></script>
  *
  * Custom events:  wholestory("Signup", { props: { plan: "pro" } })
+ * Opting a browser out:  localStorage.wholestory_ignore = "1"
+ *
  * Calls made before the script loads are queued by the snippet:
  *   <script>window.wholestory = window.wholestory || function () { (wholestory.q = wholestory.q || []).push(arguments) }</script>
  */
@@ -27,6 +29,13 @@ interface TrackerWindow extends Window {
   const send = (name: string, options?: Options) => {
     // Local development and file:// pages are never counted.
     if (/^localhost$|^127(\.\d+){3}$|^\[::1\]$/.test(l.hostname) || l.protocol === "file:") return;
+    // An opt-out for whoever is showing the product: their own clicks should not inflate the numbers they
+    // are demonstrating. Read and never written — a tracker that stores something needs a cookie banner.
+    // Guarded because localStorage throws outright under some privacy settings, and a tracker that throws
+    // breaks the page it is a guest on.
+    try {
+      if (localStorage.wholestory_ignore) return;
+    } catch {}
 
     const body = JSON.stringify({
       name,
