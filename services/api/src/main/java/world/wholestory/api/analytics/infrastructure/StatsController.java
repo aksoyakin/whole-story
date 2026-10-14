@@ -14,6 +14,7 @@ import world.wholestory.api.analytics.application.DateRange;
 import world.wholestory.api.analytics.application.Dimension;
 import world.wholestory.api.analytics.application.GoalConversion;
 import world.wholestory.api.analytics.application.Interval;
+import world.wholestory.api.analytics.application.Measure;
 import world.wholestory.api.analytics.application.RealtimeVisitors;
 import world.wholestory.api.analytics.application.SiteNotVisibleException;
 import world.wholestory.api.analytics.application.StatsQueries;
@@ -66,11 +67,12 @@ class StatsController {
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                              @RequestParam(required = false) Interval interval,
+                                             @RequestParam(defaultValue = "VISITORS") Measure measure,
                                              @RequestParam(name = "filter", required = false) List<String> filter,
                                              @AuthenticationPrincipal AuthenticatedUser principal) {
         DateRange range = rangeFor(siteId, principal, from, to);
         Interval buckets = interval == null ? range.naturalInterval() : interval;
-        return stats.timeseries(siteId, range, buckets, StatsRequests.parseFilters(filter)).stream()
+        return stats.timeseries(siteId, range, buckets, measure, StatsRequests.parseFilters(filter)).stream()
                 .map(StatsResponseMapper::toResponse)
                 .toList();
     }

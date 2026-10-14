@@ -314,6 +314,15 @@
             "enum" : [ "HOUR", "DAY" ]
           }
         }, {
+          "name" : "measure",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "VISITORS",
+            "enum" : [ "VISITORS", "PAGEVIEWS" ]
+          }
+        }, {
           "name" : "filter",
           "in" : "query",
           "required" : false,
@@ -610,6 +619,15 @@
           "schema" : {
             "type" : "string",
             "enum" : [ "HOUR", "DAY" ]
+          }
+        }, {
+          "name" : "measure",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "default" : "VISITORS",
+            "enum" : [ "VISITORS", "PAGEVIEWS" ]
           }
         }, {
           "name" : "filter",
@@ -1098,16 +1116,12 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "visitors" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "pageviews" : {
+          "value" : {
             "type" : "integer",
             "format" : "int64"
           }
         },
-        "required" : [ "bucket", "pageviews", "visitors" ]
+        "required" : [ "bucket", "value" ]
       },
       "SummaryResponse" : {
         "type" : "object",

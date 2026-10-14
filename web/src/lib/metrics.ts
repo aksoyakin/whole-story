@@ -14,3 +14,12 @@ export const METRIC_LABELS: Record<Metric, string> = {
 export function parseMetric(value: string | string[] | undefined): Metric {
   return METRICS.find((metric) => metric === value) ?? "visitors";
 }
+
+/**
+ * What api calls this measure. The two vocabularies are kept apart on purpose: the query parameter is
+ * bookmarkable product surface and has shipped as `metric`, while api avoids that word because this project
+ * already uses it for what Micrometer publishes (ADR 0024).
+ */
+export function measureOf(metric: Metric): "VISITORS" | "PAGEVIEWS" {
+  return metric === "pageviews" ? "PAGEVIEWS" : "VISITORS";
+}

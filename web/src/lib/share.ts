@@ -2,6 +2,7 @@ import "server-only";
 import { api } from "@/lib/api/client";
 import { type ActiveFilter, serialiseFilters } from "@/lib/filters";
 import type { GoalConversion } from "@/lib/goal-types";
+import { type Metric, measureOf } from "@/lib/metrics";
 import type { BreakdownEntry, Dimension, Summary, TimeseriesPoint } from "@/lib/stats";
 
 /**
@@ -38,10 +39,11 @@ export async function sharedSummary(domain: string, range: Range, filters: Activ
 export async function sharedTimeseries(
   domain: string,
   range: Range,
+  metric: Metric,
   filters: ActiveFilter[] = [],
 ): Promise<TimeseriesPoint[]> {
   const { data } = await api.GET("/api/public/sites/{domain}/stats/timeseries", {
-    params: { path: { domain }, query: withFilters(range, filters) },
+    params: { path: { domain }, query: { ...withFilters(range, filters), measure: measureOf(metric) } },
     cache: "no-store",
   });
   return data ?? [];

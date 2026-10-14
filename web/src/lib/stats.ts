@@ -2,6 +2,7 @@ import "server-only";
 import { api } from "@/lib/api/client";
 import { sessionHeaders } from "@/lib/auth";
 import { type ActiveFilter, serialiseFilters } from "@/lib/filters";
+import { type Metric, measureOf } from "@/lib/metrics";
 
 export type Summary = {
   visitors: number;
@@ -11,7 +12,11 @@ export type Summary = {
   averageVisitDuration: number;
 };
 
-export type TimeseriesPoint = { bucket: string; visitors: number; pageviews: number };
+/**
+ * One bucket, carrying the one measure that was asked for. The chart and the table beside it draw whichever
+ * the reader selected and never both (D-100), so asking for both was work nothing rendered.
+ */
+export type TimeseriesPoint = { bucket: string; value: number };
 /** One number per row, which is what a breakdown card draws. See the api-side record for why the others went. */
 export type BreakdownEntry = { key: string; label: string; visitors: number };
 
@@ -50,10 +55,11 @@ export async function summary(siteId: string, range: Range, filters: ActiveFilte
 export async function timeseries(
   siteId: string,
   range: Range,
+  metric: Metric,
   filters: ActiveFilter[] = [],
 ): Promise<TimeseriesPoint[]> {
   const { data } = await api.GET("/api/sites/{siteId}/stats/timeseries", {
-    params: { path: { siteId }, query: withFilters(range, filters) },
+    params: { path: { siteId }, query: { ...withFilters(range, filters), measure: measureOf(metric) } },
     headers: await sessionHeaders(),
     cache: "no-store",
   });

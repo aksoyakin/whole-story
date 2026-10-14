@@ -37,7 +37,7 @@ export function VisitorsChart({ points, metric, timezone, interval }: Props) {
   const data = points.map((point) => ({
     bucket: point.bucket,
     tick: formatBucket(point.bucket, timezone, interval),
-    value: metric === "visitors" ? point.visitors : point.pageviews,
+    value: point.value,
   }));
 
   return (

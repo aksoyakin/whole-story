@@ -70,7 +70,7 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
     devices,
   ] = await Promise.all([
     sharedSummary(site.domain, range, filters),
-    sharedTimeseries(site.domain, range, filters),
+    sharedTimeseries(site.domain, range, metric, filters),
     sharedGoalConversions(site.domain, range, filters),
     sharedRealtimeVisitors(site.domain),
     sharedBreakdown(site.domain, range, "PAGE", filters),

@@ -21,7 +21,7 @@ final class StatsResponseMapper {
     }
 
     static TimeseriesPointResponse toResponse(TimeseriesPoint point) {
-        return new TimeseriesPointResponse(point.bucket(), point.visitors(), point.pageviews());
+        return new TimeseriesPointResponse(point.bucket(), point.value());
     }
 
     /**

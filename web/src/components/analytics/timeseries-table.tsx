@@ -11,13 +11,12 @@ const numbers = new Intl.NumberFormat("en-US");
  */
 export function TimeseriesTable({
   points,
-  metric,
   label,
   timezone,
   interval,
 }: {
   points: TimeseriesPoint[];
-  metric: "visitors" | "pageviews";
+  /** Names the measure, since a point no longer says which one it carries. */
   label: string;
   timezone: string;
   interval: Interval;
@@ -35,7 +34,7 @@ export function TimeseriesTable({
         {points.map((point) => (
           <tr key={point.bucket}>
             <th scope="row">{formatBucketLong(point.bucket, timezone, interval)}</th>
-            <td>{numbers.format(metric === "visitors" ? point.visitors : point.pageviews)}</td>
+            <td>{numbers.format(point.value)}</td>
           </tr>
         ))}
       </tbody>

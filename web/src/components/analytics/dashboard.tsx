@@ -156,13 +156,7 @@ export function Dashboard({
         </CardHeader>
         <CardContent>
           <VisitorsChart points={data.points} metric={metric} timezone={timezone} interval={interval} />
-          <TimeseriesTable
-            points={data.points}
-            metric={metric}
-            label={METRIC_LABELS[metric]}
-            timezone={timezone}
-            interval={interval}
-          />
+          <TimeseriesTable points={data.points} label={METRIC_LABELS[metric]} timezone={timezone} interval={interval} />
         </CardContent>
       </Card>
 

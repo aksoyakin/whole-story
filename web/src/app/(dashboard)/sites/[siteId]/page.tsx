@@ -58,7 +58,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
     devices,
   ] = await Promise.all([
     summary(siteId, range, filters),
-    timeseries(siteId, range, filters),
+    timeseries(siteId, range, metric, filters),
     goalConversions(siteId, range, filters),
     realtimeVisitors(siteId),
     breakdown(siteId, range, "PAGE", filters),

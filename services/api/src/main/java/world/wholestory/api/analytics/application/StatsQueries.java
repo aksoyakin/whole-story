@@ -8,7 +8,12 @@ public interface StatsQueries {
 
     SummaryStats summary(UUID siteId, DateRange range, List<Filter> filters);
 
-    List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, List<Filter> filters);
+    /**
+     * One measure per bucket, not both. The dashboard draws one at a time (ADR 0020) and the two cost very
+     * differently, so asking for the one that will be drawn is the difference between a scan and a sum.
+     */
+    List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, Measure measure,
+                                     List<Filter> filters);
 
     List<BreakdownEntry> breakdown(UUID siteId, DateRange range, Dimension dimension, int limit, List<Filter> filters);
 

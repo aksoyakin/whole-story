@@ -147,11 +147,28 @@ class StatsIntegrationTest {
         var points = jsonMapper.readTree(result.getResponse().getContentAsString());
         var withTraffic = java.util.stream.StreamSupport
                 .stream(points.spliterator(), false)
-                .filter(point -> point.get("visitors").asInt() > 0)
+                .filter(point -> point.get("value").asInt() > 0)
                 .toList();
         assertThat(withTraffic).hasSize(1);
         assertThat(withTraffic.getFirst().get("bucket").asString()).startsWith("2026-10-01T09:00");
-        assertThat(withTraffic.getFirst().get("pageviews").asInt()).isEqualTo(4);
+        assertThat(withTraffic.getFirst().get("value").asInt()).isEqualTo(1);
+
+        // The other measure is a second request now, because one is drawn at a time and the endpoint stopped
+        // computing the one nobody asked for.
+        MvcResult views = mvc.perform(measured(site, "PAGEVIEWS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(24))
+                .andReturn();
+
+        var viewed = java.util.stream.StreamSupport
+                .stream(jsonMapper.readTree(views.getResponse().getContentAsString()).spliterator(), false)
+                .filter(point -> point.get("value").asInt() > 0)
+                .toList();
+        assertThat(viewed).hasSize(1);
+        // The same hour as the visit, found by its timestamp rather than by counting buckets: the day starts
+        // at the Istanbul midnight, which is 21:00Z, so the index would be an invitation to get it wrong.
+        assertThat(viewed.getFirst().get("bucket").asString()).startsWith("2026-10-01T09:00");
+        assertThat(viewed.getFirst().get("value").asInt()).isEqualTo(4);
     }
 
     @Test
@@ -164,8 +181,8 @@ class StatsIntegrationTest {
                 .andExpect(jsonPath("$.length()").value(7))
                 // The first bucket starts at the Istanbul midnight, which is 21:00 UTC the day before.
                 .andExpect(jsonPath("$[0].bucket").value("2026-09-30T21:00:00Z"))
-                .andExpect(jsonPath("$[0].visitors").value(1))
-                .andExpect(jsonPath("$[1].visitors").value(0));
+                .andExpect(jsonPath("$[0].value").value(1))
+                .andExpect(jsonPath("$[1].value").value(0));
     }
 
     /**
@@ -186,16 +203,30 @@ class StatsIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(24))
                 .andExpect(jsonPath("$[0].bucket").value("2026-09-30T18:30:00Z"))
-                .andExpect(jsonPath("$[0].visitors").value(1))
-                .andExpect(jsonPath("$[0].pageviews").value(2))
-                .andExpect(jsonPath("$[1].visitors").value(0));
+                .andExpect(jsonPath("$[0].value").value(1))
+                .andExpect(jsonPath("$[1].value").value(0));
 
-        // A filter moves the pageviews to the events (D-103), which have to be binned onto the same grid.
-        mvc.perform(filtered(site, "timeseries", "PAGE:/"))
+        // Every measure has to land on the same grid, and each comes from a different table: visitors from
+        // the sessions above, pageviews from the hourly rollup here, and from the events once filtered.
+        mvc.perform(measured(site, "PAGEVIEWS"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(24))
-                .andExpect(jsonPath("$[0].visitors").value(1))
-                .andExpect(jsonPath("$[0].pageviews").value(1));
+                .andExpect(jsonPath("$[0].bucket").value("2026-09-30T18:30:00Z"))
+                .andExpect(jsonPath("$[0].value").value(2));
+
+        // A filter moves the pageviews to the events (D-103), which have to be binned onto the same grid.
+        mvc.perform(get("/api/sites/{siteId}/stats/timeseries", site.id())
+                .param("from", THE_DAY).param("to", THE_DAY)
+                .param("measure", "PAGEVIEWS").param("filter", "PAGE:/")
+                .cookie(site.session()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(24))
+                .andExpect(jsonPath("$[0].value").value(1));
+
+        // And the visitors are still exact when filtered, from the same sessions.
+        mvc.perform(filtered(site, "timeseries", "PAGE:/"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].value").value(1));
     }
 
     @Test
@@ -594,6 +625,15 @@ class StatsIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(stats(site, "summary", "2026-01-01", "2027-01-02", site.session()))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** The time series for one measure. Built whole, because MockMvc appends parameters rather than replacing them. */
+    private MockHttpServletRequestBuilder measured(Site site, String measure) {
+        return get("/api/sites/{siteId}/stats/timeseries", site.id())
+                .param("from", THE_DAY)
+                .param("to", THE_DAY)
+                .param("measure", measure)
+                .cookie(site.session());
     }
 
     private MockHttpServletRequestBuilder stats(Site site, String report) {

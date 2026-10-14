@@ -10,6 +10,7 @@ import world.wholestory.api.analytics.application.Filter;
 import world.wholestory.api.analytics.application.GoalConversion;
 import world.wholestory.api.analytics.application.GoalDefinition;
 import world.wholestory.api.analytics.application.Interval;
+import world.wholestory.api.analytics.application.Measure;
 import world.wholestory.api.analytics.application.StatsQueries;
 import world.wholestory.api.analytics.application.SummaryStats;
 import world.wholestory.api.analytics.application.TimeseriesPoint;
@@ -74,22 +75,32 @@ class JdbcStatsQueries implements StatsQueries {
      * Days are cut in the site's timezone, which is the one place the rollup's hourly grain shows: in a zone
      * whose offset is not a whole number of hours the boundary lands inside an hour (ADR 0020). Visitors come
      * from sessions and are exact in every zone.
+     * <p>
+     * One measure, chosen by the request. Both used to be computed and one of them was always thrown away,
+     * because the chart and the table beside it draw whichever the reader selected and never both
+     * ({@link Measure}).
      */
     private static final String TIMESERIES_BY_DAY = """
             with buckets as (select generate_series(:fromDate::date, :toDate::date, interval '1 day')::date as bucket),
-                 visitors as (select (s.started_at at time zone :zone)::date as bucket,
-                                     count(distinct s.visitor_hash)          as visitors
-                              %s
-                              group by 1),
-                 views as (%s)
-            select (b.bucket::timestamp at time zone :zone) as bucket_at,
-                   coalesce(v.visitors, 0)                  as visitors,
-                   coalesce(w.pageviews, 0)                 as pageviews
+                 measured as (%s)
+            select (b.bucket::timestamp at time zone :zone) as bucket_at, coalesce(m.value, 0) as value
             from buckets b
-                     left join visitors v on v.bucket = b.bucket
-                     left join views w on w.bucket = b.bucket
+                     left join measured m on m.bucket = b.bucket
             order by b.bucket
             """;
+
+    /** Visitors per local day: a distinct count over the sessions, which no rollup at a UTC grain can supply. */
+    private static final String DAILY_VISITORS = """
+            select (s.started_at at time zone :zone)::date as bucket,
+                   count(distinct s.visitor_hash)          as value
+            %s
+            group by 1""";
+
+    private static final String HOURLY_VISITORS = """
+            select date_bin(interval '1 hour', s.started_at, :start) as bucket_at,
+                   count(distinct s.visitor_hash)                    as value
+            %s
+            group by 1""";
 
     /**
      * An hour is an hour everywhere, so hour buckets need no timezone conversion — but they do need to be
@@ -100,27 +111,22 @@ class JdbcStatsQueries implements StatsQueries {
      */
     private static final String TIMESERIES_BY_HOUR = """
             with buckets as (select generate_series(:start, :end - interval '1 hour', interval '1 hour') as bucket_at),
-                 visitors as (select date_bin(interval '1 hour', s.started_at, :start) as bucket_at,
-                                     count(distinct s.visitor_hash)                    as visitors
-                              %s
-                              group by 1),
-                 views as (%s)
-            select b.bucket_at, coalesce(v.visitors, 0) as visitors, coalesce(w.pageviews, 0) as pageviews
+                 measured as (%s)
+            select b.bucket_at, coalesce(m.value, 0) as value
             from buckets b
-                     left join visitors v on v.bucket_at = b.bucket_at
-                     left join views w on w.bucket_at = b.bucket_at
+                     left join measured m on m.bucket_at = b.bucket_at
             order by b.bucket_at
             """;
 
     private static final String DAILY_VIEWS_FROM_ROLLUP = """
-            select (hour at time zone :zone)::date as bucket, sum(pageviews) as pageviews
+            select (hour at time zone :zone)::date as bucket, sum(pageviews) as value
             from analytics.api_page_hourly
             where site_id = :siteId and hour >= :start and hour < :end
             group by 1
             """;
     private static final String DAILY_VIEWS_FROM_EVENTS = """
-            select (e.timestamp at time zone :zone)::date           as bucket,
-                   count(*) filter (where e.name = 'pageview')      as pageviews
+            select (e.timestamp at time zone :zone)::date      as bucket,
+                   count(*) filter (where e.name = 'pageview') as value
             %s
             group by 1
             """;
@@ -130,14 +136,14 @@ class JdbcStatsQueries implements StatsQueries {
      * carries by design (ADR 0020); the summary's pageview count drops the same partial hour, so the two agree.
      */
     private static final String HOURLY_VIEWS_FROM_ROLLUP = """
-            select date_bin(interval '1 hour', hour, :start) as bucket_at, sum(pageviews) as pageviews
+            select date_bin(interval '1 hour', hour, :start) as bucket_at, sum(pageviews) as value
             from analytics.api_page_hourly
             where site_id = :siteId and hour >= :start and hour < :end
             group by 1
             """;
     private static final String HOURLY_VIEWS_FROM_EVENTS = """
             select date_bin(interval '1 hour', e.timestamp, :start) as bucket_at,
-                   count(*) filter (where e.name = 'pageview')      as pageviews
+                   count(*) filter (where e.name = 'pageview')      as value
             %s
             group by 1
             """;
@@ -320,22 +326,37 @@ class JdbcStatsQueries implements StatsQueries {
     }
 
     @Override
-    public List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, List<Filter> filters) {
+    public List<TimeseriesPoint> timeseries(UUID siteId, DateRange range, Interval interval, Measure measure,
+                                            List<Filter> filters) {
         FilterClauses clauses = FilterClauses.of(filters);
         boolean hourly = interval == Interval.HOUR;
-        String views = clauses.any()
-                ? (hourly ? HOURLY_VIEWS_FROM_EVENTS : DAILY_VIEWS_FROM_EVENTS).formatted(events(clauses))
-                : (hourly ? HOURLY_VIEWS_FROM_ROLLUP : DAILY_VIEWS_FROM_ROLLUP);
-        String sql = (hourly ? TIMESERIES_BY_HOUR : TIMESERIES_BY_DAY).formatted(sessions(clauses), views);
+        String sql = (hourly ? TIMESERIES_BY_HOUR : TIMESERIES_BY_DAY)
+                .formatted(measured(measure, hourly, clauses));
         return bind(sql, siteId, range, clauses)
                 .param("zone", range.zone().getId())
                 .param("fromDate", range.from())
                 .param("toDate", range.to())
                 .query((rs, row) -> new TimeseriesPoint(
                         rs.getObject("bucket_at", OffsetDateTime.class).toInstant(),
-                        rs.getLong("visitors"),
-                        rs.getLong("pageviews")))
+                        rs.getLong("value")))
                 .list();
+    }
+
+    /**
+     * The one measure the request asked for, from whichever table can honestly answer it.
+     * <p>
+     * Pageviews follow D-103 as they always did: the hourly rollup when nothing is filtered, the events when
+     * something is, because the rollup holds no dimension beyond the page. Visitors have no such choice —
+     * a bucket is a day in the site's own timezone and the rollup's grain is the UTC day (ADR 0005), and one
+     * local day straddles two of them, so this is a distinct count over the sessions at any range.
+     */
+    private String measured(Measure measure, boolean hourly, FilterClauses clauses) {
+        if (measure == Measure.VISITORS) {
+            return (hourly ? HOURLY_VISITORS : DAILY_VISITORS).formatted(sessions(clauses));
+        }
+        return clauses.any()
+                ? (hourly ? HOURLY_VIEWS_FROM_EVENTS : DAILY_VIEWS_FROM_EVENTS).formatted(events(clauses))
+                : (hourly ? HOURLY_VIEWS_FROM_ROLLUP : DAILY_VIEWS_FROM_ROLLUP);
     }
 
     @Override

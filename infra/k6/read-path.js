@@ -17,9 +17,12 @@
 //   the whole matrix per iteration  Period x endpoint x filtered, in a fixed order, repeated. Every
 //                                   combination therefore gets the same number of samples and the same
 //                                   cache conditions, which is what makes them comparable to each other.
-//   a dashboard total               The page makes fourteen requests: a summary, a timeseries, the goals, the
-//                                   realtime count and ten breakdowns. Timing them individually says which
-//                                   is slow; timing the set says whether the page is.
+//   a dashboard total               The page makes fourteen requests: a summary, one time series, the goals,
+//                                   the realtime count and ten breakdowns. Timing them individually says
+//                                   which is slow; timing the set says whether the page is. Both measures of
+//                                   the series are requested here, so the total covers one of them and the
+//                                   other is reported on its own -- a reader never sees both (D-100), and a
+//                                   total that added them would describe a page nobody opens.
 //
 // The public endpoints are used rather than the owner's. The SQL is identical — the rules are shared in
 // StatsRequests and only the source of authority differs (D-137) — and this needs no session cookie, which
@@ -52,7 +55,13 @@ const PERIODS = (__ENV.PERIODS || 'today,7d,30d,12m').split(',').map((p) => p.tr
 // Found by running the script once with a single iteration before trusting it, which is the same rule the
 // deployment notes apply to configuration: something that has only ever existed in the repository has never
 // run (D-147).
-const ENDPOINTS = ['summary', 'timeseries', 'goals', 'realtime']
+// The time series is timed once per measure. The chart draws one at a time (D-100) and since the endpoint
+// stopped computing both, the two cost very different amounts: visitors is a distinct count per bucket over
+// the sessions, pageviews a sum over the hourly rollup. Timing only one of them would describe half the page.
+const MEASURES = ['VISITORS', 'PAGEVIEWS'];
+
+const ENDPOINTS = ['summary', 'goals', 'realtime']
+  .concat(MEASURES.map((m) => `timeseries_${m.toLowerCase()}`))
   .concat(DIMENSIONS.map((d) => `breakdown_${d.toLowerCase()}`));
 
 const trends = {};
@@ -141,15 +150,25 @@ export default function () {
 
       const started = Date.now();
       get(`${ROOT}/summary?${range}${suffix}`, 'summary', period, filtered);
-      get(`${ROOT}/timeseries?${range}${suffix}`, 'timeseries', period, filtered);
+      // The default measure, and the only one a render makes: the chart draws one at a time (D-100).
+      get(`${ROOT}/timeseries?${range}&measure=${MEASURES[0]}${suffix}`,
+          `timeseries_${MEASURES[0].toLowerCase()}`, period, filtered);
       get(`${ROOT}/goals?${range}${suffix}`, 'goals', period, filtered);
       get(`${ROOT}/realtime`, 'realtime', period, filtered);
       for (const dimension of DIMENSIONS) {
         get(`${ROOT}/breakdown?dimension=${dimension}&${range}${suffix}`,
             `breakdown_${dimension.toLowerCase()}`, period, filtered);
       }
-      // What the page costs, which is the only number a visitor actually experiences.
+      // What the page costs, which is the only number a visitor actually experiences. Closed before the
+      // other measure is asked for: a reader who switches the chart pays one of the two, never both, so a
+      // total that included each would describe a render nobody performs.
       record(`dashboard_${period}_${filtered ? 'filtered' : 'plain'}`, Date.now() - started);
+
+      // The same series, the other measure, timed outside the total. This is the one the change is about.
+      for (const measure of MEASURES.slice(1)) {
+        get(`${ROOT}/timeseries?${range}&measure=${measure}${suffix}`,
+            `timeseries_${measure.toLowerCase()}`, period, filtered);
+      }
     }
   }
 }
