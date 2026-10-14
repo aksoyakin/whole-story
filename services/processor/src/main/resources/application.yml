@@ -24,6 +24,12 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      repositories:
+        # Off because there are none: Redis is used through RedisTemplate only, and the scan said so itself —
+        # "Found 0 Redis repository interfaces" after a bootstrap that cost seven log lines to reach that
+        # conclusion. Left on, it also drags Spring Data into strict mode wherever a second module is present
+        # and makes it announce, once per JPA repository, that it cannot tell whose they are.
+        enabled: false
 
 server:
   port: 8082
@@ -47,3 +53,19 @@ management:
       # percentile over a window. Verified by scraping: histogram buckets only appear once this is set.
       percentiles-histogram:
         http.server.requests: true
+
+logging:
+  level:
+    # Every Kafka client logs its entire resolved configuration when it is built — 92 lines for one admin
+    # client, and these services build three apiece. It answers a question nobody asks twice, while the
+    # settings it prints come from the file above.
+    #
+    # What this gives up, measured rather than assumed: the same logger's other message, "these
+    # configurations were supplied but are not used yet", which names a pass-through property Kafka did not
+    # recognise. It is INFO too, so no level separates the two — the first guess was that it was a warning
+    # and an experiment with a deliberately misspelled property said otherwise.
+    #
+    # Given up knowingly. That notice only covers raw `properties.*` entries, of which these services set a
+    # handful, and the integration tests build real clients against a real broker. The louder version of this
+    # risk is a Boot property that is silently ignored (D-119), and this logger never covered that anyway.
+    org.apache.kafka.common.config.AbstractConfig: warn

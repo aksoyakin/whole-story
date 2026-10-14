@@ -57,6 +57,12 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      repositories:
+        # Off because there are none: Redis is used through RedisTemplate only, and the scan said so itself —
+        # "Found 0 Redis repository interfaces" after a bootstrap that cost seven log lines to reach that
+        # conclusion. Left on, it also drags Spring Data into strict mode wherever a second module is present
+        # and makes it announce, once per JPA repository, that it cannot tell whose they are.
+        enabled: false
   session:
     # Long enough that a dashboard is not a login screen, short enough to expire an abandoned browser (ADR 0018).
     timeout: 14d
@@ -86,6 +92,18 @@ spring:
 
 server:
   port: 8080
+
+springdoc:
+  api-docs:
+    # Off, and springdoc says so itself at startup: "enabled by default. To disable it in production, set
+    # springdoc.api-docs.enabled=false". The contract this project ships is web/openapi.json, which a test
+    # generates and commits (OpenApiContractTest); the runtime endpoint serves nobody. api is not routed from
+    # the internet either, so this removes an endpoint rather than a leak — but an endpoint that exists and
+    # answers nobody is still something a reader has to rule out.
+    #
+    # The test that needs it turns it back on for itself, which is also the documentation of who the one
+    # consumer is.
+    enabled: false
 
 wholestory:
   mail:
@@ -125,3 +143,19 @@ management:
       # mark the api unhealthy and take the dashboard down with it. A failed send leaves its outbox row
       # incomplete, which is the honest record of it.
       enabled: false
+
+logging:
+  level:
+    # Every Kafka client logs its entire resolved configuration when it is built — 92 lines for one admin
+    # client, and these services build three apiece. It answers a question nobody asks twice, while the
+    # settings it prints come from the file above.
+    #
+    # What this gives up, measured rather than assumed: the same logger's other message, "these
+    # configurations were supplied but are not used yet", which names a pass-through property Kafka did not
+    # recognise. It is INFO too, so no level separates the two — the first guess was that it was a warning
+    # and an experiment with a deliberately misspelled property said otherwise.
+    #
+    # Given up knowingly. That notice only covers raw `properties.*` entries, of which these services set a
+    # handful, and the integration tests build real clients against a real broker. The louder version of this
+    # risk is a Boot property that is silently ignored (D-119), and this logger never covered that anyway.
+    org.apache.kafka.common.config.AbstractConfig: warn

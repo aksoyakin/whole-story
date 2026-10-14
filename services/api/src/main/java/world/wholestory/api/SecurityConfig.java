@@ -52,7 +52,10 @@ class SecurityConfig {
                         // they will answer for is decided by the site's own sharing flag, not by this matcher.
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
-                        // The generated contract feeds the web client's types; api is internal either way.
+                        // Off by default (see application.yml), so this matcher is for the one test that
+                        // turns it back on, and for anyone exploring locally. Kept rather than deleted
+                        // because without it that test would be asserting the security chain's 401 instead
+                        // of the contract.
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 // An unauthenticated call gets a bare 401 for the Next server to turn into a redirect; a login
