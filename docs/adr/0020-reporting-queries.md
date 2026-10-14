@@ -77,6 +77,28 @@ a country has to be readable as filled or not.
 - The ranked list of countries sits beside the map with the same numbers, so the map is the picture rather than
   the only way to read them. That matters here because the map, like the chart, is drawn by the browser.
 
+## How long a range may be
+
+The dashboard offers today, seven days and thirty, and a range somebody types. A typed range is capped at
+**366 days**, and a request for more is refused rather than quietly shortened.
+
+The cap exists because the cost of one of these requests grows with the range and is not bounded by anything
+else. Half of these endpoints answer without a session — a shared dashboard serves whoever holds the link
+(ADR 0019 is about which domains may *write*; nothing equivalent limits who may *read* a shared site) — so
+"the caller has an account" is not a limit. Measured, a twelve-month report is about 24 seconds of database
+work on a 49M event corpus, and it grows from there.
+
+366 rather than a round number: a year plus the leap day, so "the last year" always fits. It is also the
+longest range that has been measured end to end, and a limit you have measured is one you can defend. The
+figure sits beside the existing ceilings on breakdown size and filter count, in the one class both the
+private and the public endpoints share, so the two halves cannot drift apart.
+
+Refused rather than clamped, which is the opposite of what breakdown size does. The size of a list is a
+presentation detail and nobody is misled by receiving a hundred rows; a date range is a question somebody
+asked, and answering a different one without saying so is how a dashboard ends up confidently wrong. The
+form carries the same limit as an input attribute so that a browser says no first, but that is a
+convenience: a form is trivially bypassed, and the only limit that counts is the one the server applies.
+
 ## Consequences
 - The top pages report reads `events`, which is the heaviest query the dashboard makes and the one that will not
   benefit from the rollup. A page filter is heavier still, since it adds the semi-join on top; both belong in the

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type React from "react";
 import { BreakdownCard } from "@/components/analytics/breakdown-card";
+import { CustomRangePicker } from "@/components/analytics/custom-range";
 import { type Chip, FilterChips } from "@/components/analytics/filter-chips";
 import { GoalsCard } from "@/components/analytics/goals-card";
 import { RealtimeVisitors } from "@/components/analytics/realtime-visitors";
@@ -13,7 +14,7 @@ import type { Interval } from "@/lib/buckets";
 import { type ActiveFilter, absentLabel, serialiseFilters, withFilter, withoutFilter } from "@/lib/filters";
 import type { GoalConversion } from "@/lib/goal-types";
 import { METRIC_LABELS, METRICS, type Metric } from "@/lib/metrics";
-import { PERIOD_LABELS, PERIODS, type Period } from "@/lib/period";
+import { type CustomRange, isCustom, PERIOD_LABELS, PERIODS, type Selection, selectionParams } from "@/lib/period";
 import type { BreakdownEntry, Dimension, Summary, TimeseriesPoint } from "@/lib/stats";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,9 @@ type Props = {
   /** Where this dashboard lives, so that a period, a metric or a filter stays on the same page. */
   basePath: string;
   timezone: string;
-  period: Period;
+  period: Selection;
+  /** The window `period` resolves to, so the range picker opens on what is actually shown. */
+  range: CustomRange;
   metric: Metric;
   filters: ActiveFilter[];
   interval: Interval;
@@ -61,6 +64,7 @@ export function Dashboard({
   basePath,
   timezone,
   period,
+  range,
   metric,
   filters,
   interval,
@@ -115,6 +119,13 @@ export function Dashboard({
               </Link>
             ))}
           </nav>
+          <CustomRangePicker
+            basePath={basePath}
+            range={range}
+            metric={metric}
+            filters={filters}
+            active={isCustom(period)}
+          />
         </div>
       </header>
 
@@ -254,8 +265,8 @@ export function Dashboard({
 }
 
 /** Dashboard state lives in the URL, so every view can be shared and survives a reload (D-047). */
-function href(basePath: string, period: Period, metric: Metric, filters: ActiveFilter[]): string {
-  const query = new URLSearchParams({ period, metric });
+function href(basePath: string, period: Selection, metric: Metric, filters: ActiveFilter[]): string {
+  const query = new URLSearchParams({ ...selectionParams(period), metric });
   for (const filter of serialiseFilters(filters)) {
     query.append("filter", filter);
   }

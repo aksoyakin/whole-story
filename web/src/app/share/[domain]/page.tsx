@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Dashboard } from "@/components/analytics/dashboard";
 import { parseFilters } from "@/lib/filters";
 import { parseMetric } from "@/lib/metrics";
-import { parsePeriod, toDateRange } from "@/lib/period";
+import { intervalFor, parseSelection, toDateRange } from "@/lib/period";
 import {
   sharedBreakdown,
   sharedGoalConversions,
@@ -18,6 +18,8 @@ type Props = {
   params: Promise<{ domain: string }>;
   searchParams: Promise<{
     period?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
     metric?: string | string[];
     filter?: string | string[];
   }>;
@@ -45,11 +47,11 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
   const site = await sharedSite(decodeURIComponent(domain));
   if (!site) notFound();
 
-  const period = parsePeriod(query.period);
+  const period = parseSelection(query);
   const metric = parseMetric(query.metric);
   const filters = parseFilters(query.filter);
   const range = toDateRange(period, site.timezone);
-  const interval = period === "today" ? "hour" : "day";
+  const interval = intervalFor(range);
 
   const [
     stats,
@@ -95,6 +97,7 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
         basePath={`/share/${encodeURIComponent(site.domain)}`}
         timezone={site.timezone}
         period={period}
+        range={range}
         metric={metric}
         filters={filters}
         interval={interval}

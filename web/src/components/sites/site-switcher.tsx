@@ -1,13 +1,13 @@
 import Link from "next/link";
 import type { Metric } from "@/lib/metrics";
-import type { Period } from "@/lib/period";
+import { type Selection, selectionParams } from "@/lib/period";
 import type { Site } from "@/lib/sites";
 
 type Props = {
   /** Every site this organization has; the list the dashboard already fetched to find the current one. */
   sites: Site[];
   current: Site;
-  period: Period;
+  period: Selection;
   metric: Metric;
 };
 
@@ -34,7 +34,7 @@ export function SiteSwitcher({ sites, current, period, metric }: Props) {
   }
 
   // Deliberately without the filters: see above.
-  const query = new URLSearchParams({ period, metric });
+  const query = new URLSearchParams({ ...selectionParams(period), metric });
 
   return (
     <div className="flex flex-wrap items-center gap-3">

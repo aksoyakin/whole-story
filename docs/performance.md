@@ -227,12 +227,12 @@ it. Seven days — the period the dashboard opens on — costs **3.1 seconds**, 
 dashboard offers, costs **6.6 seconds**: issued as concurrent requests, so the wall clock is better than the
 sum, but the database is asked for 6.6 seconds of work either way and it does not have twelve spare cores.
 
-A one-year range costs **66 seconds**. Nothing in the dashboard can ask for it, which is worth stating
-plainly because the rest of this document leans on the figure: the UI offers three periods and `period.ts`
-quietly falls back to the default for anything else, while the api and the public stats endpoints take
-arbitrary `from` and `to`. So a twelve-month figure here is the api answering a range it really serves,
-reached by the measurement harness rather than by a person — a stress case, not a screen. It earns its place
-anyway, because custom ranges are in the v1 scope, and this is what one would cost on arrival.
+A one-year range costs **66 seconds**, and the rest of this document leans on figures like it, so it is worth
+saying where such a range comes from. None of the three period buttons reaches it. A typed range does — that
+is what the date fields beside them are, added once this measurement made it clear what a long range costs,
+and capped at 366 days for the same reason (ADR 0020). So a twelve-month figure here is a range the dashboard
+can genuinely ask for, at the far end of what it will accept, which is the only place the costs that grow
+with the range show up at all.
 
 > **Correction.** The first version of this paragraph said the dashboard opens on thirty days. It opens on
 > seven, and had done since M3.3, which is long before this was written — so the sentence was not stale, it

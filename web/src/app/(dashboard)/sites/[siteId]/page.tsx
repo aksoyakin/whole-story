@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { parseFilters } from "@/lib/filters";
 import { goalConversions } from "@/lib/goals";
 import { parseMetric } from "@/lib/metrics";
-import { parsePeriod, toDateRange } from "@/lib/period";
+import { intervalFor, parseSelection, toDateRange } from "@/lib/period";
 import { sitesOf } from "@/lib/sites";
 import { breakdown, realtimeVisitors, summary, timeseries } from "@/lib/stats";
 
@@ -17,6 +17,8 @@ type Props = {
   params: Promise<{ siteId: string }>;
   searchParams: Promise<{
     period?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
     metric?: string | string[];
     filter?: string | string[];
   }>;
@@ -33,11 +35,11 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
   const site = sites.find((candidate) => candidate.siteId === siteId);
   if (!site) notFound();
 
-  const period = parsePeriod(query.period);
+  const period = parseSelection(query);
   const metric = parseMetric(query.metric);
   const filters = parseFilters(query.filter);
   const range = toDateRange(period, site.timezone);
-  const interval = period === "today" ? "hour" : "day";
+  const interval = intervalFor(range);
 
   const [
     stats,
@@ -92,6 +94,7 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
         basePath={`/sites/${siteId}`}
         timezone={site.timezone}
         period={period}
+        range={range}
         metric={metric}
         filters={filters}
         interval={interval}

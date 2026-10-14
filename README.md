@@ -50,10 +50,10 @@ That is a floor rather than a capacity: at the highest rate the services used ab
 the generator, not the service, was the limit.
 
 Reading is the slower half, and it was measured against a seeded corpus of 49.4M events over 24 months. The
-dashboard offers three periods, and a whole render costs **575 ms for today, 3.1 s for the seven days it
-opens on and 6.6 s for thirty**. The figure the work below is quoted against is a **twelve-month** range,
-which the api serves and the dashboard does not yet ask for. Custom ranges are in the v1 scope, so it is what
-one would cost on arrival, and it is where the costs that grow with the range actually show up.
+dashboard opens on seven days, and a whole render costs **575 ms for today, 3.1 s for seven days and 6.6 s
+for thirty**. The figure the work below is quoted against is a **twelve-month** range: the three period
+buttons do not reach it, but the date fields beside them do, up to a capped 366 days, and that is where the
+costs that grow with the range show up at all.
 
 Three changes, each measured at render level rather than on the query alone:
 
