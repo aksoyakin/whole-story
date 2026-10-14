@@ -588,10 +588,34 @@ one `started_at` and therefore one day by construction. The page is the first on
 it is the first thing to depend on that property of events rather than of sessions.
 
 What this means in practice: the correctness of the page rollup is established by the integration test, whose
-fixture gives each day its own hashes exactly as production does, and **not** by this corpus, which cannot
-show it. The seeder should be fixed before the next read-path measurement — until it is, any future
-event-sourced rollup will show the same unexplained excess, and the next person to see it will have to redo
-this.
+fixture gives each day its own hashes exactly as production does, and **not** by this corpus, which could not
+show it.
+
+**The seeder has since been fixed and the check re-run.** A corpus that breaks the premise cannot be used to
+check anything built on it, and the next event-sourced rollup would have shown the same unexplained excess. A
+visit is now clamped to its own UTC day, alongside the two clamps it already had — production needs no such
+thing, since it hashes per event, but a seeder that gives a visit one hash does. The cost is bounded and
+small: only a visit beginning in the last minutes of a day is shortened, and no visit here lasts more than
+about ten minutes.
+
+On a freshly seeded corpus of 49.3M events the invariant holds on both halves — zero hashes spanning two UTC
+days in `events`, zero in `sessions` — and the same three numbers for `/` now agree exactly:
+
+| | |
+|---|---:|
+| A — what the rollup holds, summed | 2,032,469 |
+| B — the same days' distinct counts, computed live | 2,032,469 |
+| C — one distinct count over the whole window, live | 2,032,469 |
+
+So the page rollup is exact end to end at this scale, which is what the first attempt could not show. The
+invariant is now printed with the shape at the end of every seeding run, both halves of it, because this is
+exactly the class of property that stays invisible until something built on it reads 0.06% wrong.
+
+Fixing it turned up a second defect of the same family, which was worse. The seeder truncates the tables it
+writes so that the corpus is coherent, and `visitor_daily` was not in that list — it arrived after the script
+did. A re-seed therefore left 2.28M rollup rows describing the *previous* corpus, with a watermark still
+claiming to cover them, so every rolled-up report would have been answered from data belonging to a different
+corpus while looking entirely normal. Both the table and the watermark are reset now.
 
 ### What is slow now
 
@@ -731,10 +755,9 @@ schema ownership is the boundary (D-012, D-037).
 - **The entry and exit page cards, which the page rollup's own argument covers.** 7.2 s between them, both
   session-backed, both the same order of cardinality as the pages. Left out of the last round only because
   it was scoped to the pages.
-- **Whether the corpus can check an event-sourced rollup.** It cannot today: the seeder gives every event of
-  a visit one `visitor_hash`, so a visit crossing midnight is counted in two UTC days, and the page rollup's
-  end-to-end check is 0.06% out because of it. Production assigns the hash per event from the day's salt, so
-  the fix is in the seeder. Until then the page rollup's correctness rests on its integration test.
+- **Whether the next event-sourced rollup agrees with a live count end to end.** The seeder now holds the
+  invariant that makes such a check meaningful, and the page rollup was re-checked against it, but every
+  future one has to be checked the same way rather than assumed.
 - **Where the read path's remaining HTTP overhead comes from.** The gap between summed database work and the
   end-to-end figure was mostly the generic plan, which is fixed above; what is left has not been accounted
   for, and the summed figure it is compared against prices seven of the breakdown cards by proxy.

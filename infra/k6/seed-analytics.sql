@@ -16,6 +16,14 @@
 --                 therefore close to the sum of thirty daily figures, and the distinct count the query has to
 --                 do is correspondingly large. Modelling a visitor as stable across the period would have
 --                 made every COUNT(DISTINCT) far cheaper than the real one.
+--
+--                 It has to hold in `events` and not only in `sessions`, which is the harder half and was
+--                 wrong here at first. A session row has one started_at and therefore one day whatever else
+--                 happens; an event carries its own timestamp, so a visit crossing midnight put one hash into
+--                 two days. Every rollup that counts distinct visitors per day rests on this, so a corpus
+--                 that breaks it cannot be used to check one -- and the way that showed up was a rollup
+--                 reading 0.06% high while being perfectly correct. Visits are now clamped to their own UTC
+--                 day; see the sessions insert below.
 --   skew          paths, countries, cities and sources follow a steep distribution rather than a flat one:
 --                 a breakdown orders by visitors and takes the top rows, and with uniform data every row
 --                 looks alike, which is both unrealistic and can change what the planner chooses.
@@ -107,7 +115,14 @@ from generate_series(0, 4) i;
 -- in this repository allowed to truncate analytics.
 -- ---------------------------------------------------------------------------------------------------------
 
-truncate analytics.events, analytics.sessions, analytics.page_hourly, analytics.custom_event_hourly;
+truncate analytics.events, analytics.sessions, analytics.page_hourly, analytics.custom_event_hourly,
+         analytics.visitor_daily;
+
+-- And the daily rollup's watermark back to nothing, because truncating its table is not enough: the reader
+-- consults the watermark, not the rows, and a watermark left claiming days it no longer has rows for would
+-- make every report over those days come back empty while looking entirely ordinary. The rollup table
+-- arrived after this script did, which is the only reason it was ever missing from the line above.
+update analytics.visitor_daily_watermark set covered_through = null, updated_at = now();
 
 -- ---------------------------------------------------------------------------------------------------------
 -- Sites. The neighbours exist so that the site_id predicate has to discriminate: on a single-site table an
@@ -273,13 +288,34 @@ begin
                    -- is what this did first, gave the same hash to the same day number in every month and so
                    -- let a visitor recur across the period — the one thing the daily salt rules out (D-028).
                    -- Caught by counting: 61 days held 21,605 distinct hashes but 34,689 (day, hash) pairs.
-                   hashtextextended(s.site_id::text || ':' || draw.started_at::date::text
+                   hashtextextended(s.site_id::text || ':'
+                                    || (draw.started_at at time zone 'UTC')::date::text
                                     || ':' || draw.visitor::text, 0),
-                   -- Clamped inside the month so every event of a visit lands in the partition this chunk
-                   -- rolls up; a visit starting at 23:59 on the last day would otherwise put rows outside
-                   -- the range and the rollup would stop agreeing with the events.
+                   -- Clamped three ways, and the last of them is what keeps this corpus honest.
+                   --
+                   -- Inside the month, so that every event of a visit lands in the partition this chunk rolls
+                   -- up: a visit starting at 23:59 on the last day would otherwise put rows outside the range
+                   -- and the rollup would stop agreeing with the events.
+                   --
+                   -- Inside its own UTC day, because the events below inherit this visit's visitor_hash and
+                   -- that hash is keyed on the day. Production needs no such clamp: ingest computes the hash
+                   -- per event from that day's salt (ADR 0005) and stores the event's own, so an event
+                   -- arriving after midnight carries the new day's hash while the sessionizer keeps the visit
+                   -- together through previousVisitorHash (D-028). Here there is one hash per visit, so a
+                   -- visit crossing midnight would put the same hash into two UTC days and break the single
+                   -- property every daily rollup is built on.
+                   --
+                   -- That is not hypothetical. Before this clamp existed 659 hashes a month spanned two days
+                   -- in events while zero did in sessions, and the first breakdown ever answered from a
+                   -- rollup counted from events came out 0.06% high -- a discrepancy that took an afternoon
+                   -- to attribute, because the rollup was right and the corpus was wrong.
+                   --
+                   -- The cost is small and bounded: only a visit beginning in the last minutes of a day is
+                   -- shortened, and no visit here lasts more than about ten minutes.
                    least(draw.started_at + (draw.duration || ' seconds')::interval,
                          month_start + interval '1 month' - interval '1 second',
+                         date_trunc('day', draw.started_at at time zone 'UTC') at time zone 'UTC'
+                             + interval '1 day' - interval '1 second',
                          now()),
                    draw.pageviews,
                    draw.pageviews + draw.extra_events,
@@ -408,3 +444,23 @@ select pg_size_pretty(sum(pg_total_relation_size(c.oid)) filter (where c.relname
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'analytics' and c.relkind in ('r', 'p');
+
+-- The invariant every daily rollup rests on, checked rather than trusted: a visitor_hash belongs to exactly
+-- one UTC day. Both numbers must be zero.
+--
+-- `sessions` is the easy half and was always zero, because a row has one started_at. `events` is the half
+-- that was wrong, and wrong invisibly: it only shows up as a rollup that reads very slightly high, which is
+-- indistinguishable from a rollup that is simply broken until somebody takes both apart. Printed next to the
+-- shape for the same reason the shape is printed -- a corpus whose properties nobody checked cannot support
+-- a claim about anything measured on it.
+select 'hashes spanning two UTC days in events'   as invariant,
+       count(*)                                   as must_be_zero
+from (select visitor_hash from analytics.events
+      group by visitor_hash
+      having count(distinct (timestamp at time zone 'UTC')::date) > 1) x
+union all
+select 'hashes spanning two UTC days in sessions',
+       count(*)
+from (select visitor_hash from analytics.sessions
+      group by visitor_hash
+      having count(distinct (started_at at time zone 'UTC')::date) > 1) y;
