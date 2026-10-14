@@ -22,6 +22,8 @@ export type DashboardData = {
   points: TimeseriesPoint[];
   goals: GoalConversion[];
   pages: BreakdownEntry[];
+  entryPages: BreakdownEntry[];
+  exitPages: BreakdownEntry[];
   sources: BreakdownEntry[];
   countries: BreakdownEntry[];
   regions: BreakdownEntry[];
@@ -183,6 +185,23 @@ export function Dashboard({
           entries={data.pages}
           absent={absentLabel("PAGE")}
           filterHref={narrow("PAGE")}
+        />
+        {/*
+          A page and an entry page answer different questions and come from different tables: "Top pages"
+          counts pageviews, these two count visits by where they began and ended. Filtering by one of them
+          narrows the whole dashboard to those visits, which is the one case that needs a semi-join (D-104).
+        */}
+        <BreakdownCard
+          title="Entry pages"
+          entries={data.entryPages}
+          absent={absentLabel("ENTRY_PAGE")}
+          filterHref={narrow("ENTRY_PAGE")}
+        />
+        <BreakdownCard
+          title="Exit pages"
+          entries={data.exitPages}
+          absent={absentLabel("EXIT_PAGE")}
+          filterHref={narrow("EXIT_PAGE")}
         />
         <BreakdownCard
           title="Sources"

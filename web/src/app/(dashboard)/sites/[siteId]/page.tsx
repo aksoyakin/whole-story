@@ -38,21 +38,37 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
-  const [stats, points, goals, onSiteNow, pages, sources, countries, regions, cities, browsers, systems, devices] =
-    await Promise.all([
-      summary(siteId, range, filters),
-      timeseries(siteId, range, filters),
-      goalConversions(siteId, range, filters),
-      realtimeVisitors(siteId),
-      breakdown(siteId, range, "PAGE", filters),
-      breakdown(siteId, range, "SOURCE", filters),
-      breakdown(siteId, range, "COUNTRY", filters),
-      breakdown(siteId, range, "REGION", filters),
-      breakdown(siteId, range, "CITY", filters),
-      breakdown(siteId, range, "BROWSER", filters),
-      breakdown(siteId, range, "OS", filters),
-      breakdown(siteId, range, "DEVICE", filters),
-    ]);
+  const [
+    stats,
+    points,
+    goals,
+    onSiteNow,
+    pages,
+    entryPages,
+    exitPages,
+    sources,
+    countries,
+    regions,
+    cities,
+    browsers,
+    systems,
+    devices,
+  ] = await Promise.all([
+    summary(siteId, range, filters),
+    timeseries(siteId, range, filters),
+    goalConversions(siteId, range, filters),
+    realtimeVisitors(siteId),
+    breakdown(siteId, range, "PAGE", filters),
+    breakdown(siteId, range, "ENTRY_PAGE", filters),
+    breakdown(siteId, range, "EXIT_PAGE", filters),
+    breakdown(siteId, range, "SOURCE", filters),
+    breakdown(siteId, range, "COUNTRY", filters),
+    breakdown(siteId, range, "REGION", filters),
+    breakdown(siteId, range, "CITY", filters),
+    breakdown(siteId, range, "BROWSER", filters),
+    breakdown(siteId, range, "OS", filters),
+    breakdown(siteId, range, "DEVICE", filters),
+  ]);
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
@@ -86,6 +102,8 @@ export default async function SiteDashboard({ params, searchParams }: Props) {
           points,
           goals,
           pages,
+          entryPages,
+          exitPages,
           sources,
           countries,
           regions,

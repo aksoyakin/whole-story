@@ -51,21 +51,37 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
   const range = toDateRange(period, site.timezone);
   const interval = period === "today" ? "hour" : "day";
 
-  const [stats, points, goals, onSiteNow, pages, sources, countries, regions, cities, browsers, systems, devices] =
-    await Promise.all([
-      sharedSummary(site.domain, range, filters),
-      sharedTimeseries(site.domain, range, filters),
-      sharedGoalConversions(site.domain, range, filters),
-      sharedRealtimeVisitors(site.domain),
-      sharedBreakdown(site.domain, range, "PAGE", filters),
-      sharedBreakdown(site.domain, range, "SOURCE", filters),
-      sharedBreakdown(site.domain, range, "COUNTRY", filters),
-      sharedBreakdown(site.domain, range, "REGION", filters),
-      sharedBreakdown(site.domain, range, "CITY", filters),
-      sharedBreakdown(site.domain, range, "BROWSER", filters),
-      sharedBreakdown(site.domain, range, "OS", filters),
-      sharedBreakdown(site.domain, range, "DEVICE", filters),
-    ]);
+  const [
+    stats,
+    points,
+    goals,
+    onSiteNow,
+    pages,
+    entryPages,
+    exitPages,
+    sources,
+    countries,
+    regions,
+    cities,
+    browsers,
+    systems,
+    devices,
+  ] = await Promise.all([
+    sharedSummary(site.domain, range, filters),
+    sharedTimeseries(site.domain, range, filters),
+    sharedGoalConversions(site.domain, range, filters),
+    sharedRealtimeVisitors(site.domain),
+    sharedBreakdown(site.domain, range, "PAGE", filters),
+    sharedBreakdown(site.domain, range, "ENTRY_PAGE", filters),
+    sharedBreakdown(site.domain, range, "EXIT_PAGE", filters),
+    sharedBreakdown(site.domain, range, "SOURCE", filters),
+    sharedBreakdown(site.domain, range, "COUNTRY", filters),
+    sharedBreakdown(site.domain, range, "REGION", filters),
+    sharedBreakdown(site.domain, range, "CITY", filters),
+    sharedBreakdown(site.domain, range, "BROWSER", filters),
+    sharedBreakdown(site.domain, range, "OS", filters),
+    sharedBreakdown(site.domain, range, "DEVICE", filters),
+  ]);
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
@@ -89,6 +105,8 @@ export default async function SharedDashboard({ params, searchParams }: Props) {
           points,
           goals,
           pages,
+          entryPages,
+          exitPages,
           sources,
           countries,
           regions,
