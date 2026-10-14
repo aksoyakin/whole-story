@@ -60,6 +60,11 @@ __COMPUTE__
         done := done + 1;
     end loop;
     update analytics.visitor_daily_watermark set covered_through = last_day, updated_at = now();
+    -- Every day was just computed from the sessions as they are now, so nothing is waiting to be recounted.
+    -- Left behind, these marks would make the first scheduled run redo days that are already correct -- and
+    -- would read as a fault on the dashboard panel that watches them. Same rule as the seeder's: when you
+    -- rebuild something, rebuild what is derived from it (D-172).
+    delete from analytics.visitor_daily_dirty;
     raise notice 'backfill complete: % days, through %', done, last_day;
 end
 $backfill$;

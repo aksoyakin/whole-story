@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -39,25 +40,24 @@ public class VisitorDailyRollup {
     /**
      * How long after a day ends before it is counted.
      * <p>
-     * A day is counted once and never recounted, so it has to be counted when it is actually finished — and
-     * a day's last visit does not reach the database at midnight. A session that began at 23:58 is still
-     * being extended after midnight, and a batch delayed by a restart or by consumer lag lands later still.
-     * Counting at 00:00 would read a day that is still arriving and freeze the shortfall permanently, since
-     * the insert does nothing on conflict.
+     * A day's last visit does not reach the database at midnight. A session that began at 23:58 is still
+     * being extended after midnight — the session timeout caps that at 00:30 — and a batch delayed by a
+     * restart or by consumer lag lands later still. Counting at 00:00 would read a day that is still
+     * arriving.
      * <p>
      * The hourly rollups never needed this because they add to a running total and a late batch simply adds
      * to it. This one cannot: a distinct count is not a total you can add to, which is the whole reason the
-     * table exists, and so the only defence is to look late rather than to look again.
+     * table exists, and so the defence is to look late.
      * <p>
      * An hour is far beyond the lag this pipeline shows when it is healthy — seconds — and the cost of being
      * generous is only that yesterday is answered from the sessions for one hour longer.
      * <p>
-     * What it does not cover, stated rather than hidden: an outage longer than this window. Sessions that
-     * arrive for a day already counted are not picked up, because the insert does nothing on conflict and the
-     * watermark never goes back, so every report over a range containing that day is short by them. Fixing it
-     * properly means marking a day dirty when a batch lands behind it and recomputing it, which is a decision
-     * about how far to trust the rollup rather than a detail of this class. Until then the gauge below is what
-     * says the rollup is behind, and a consumer lag alert is what would say a day was missed.
+     * It used to be the *only* defence, and that was the hole: an outage longer than this window meant
+     * sessions arriving for a day already counted, dropped silently because the insert did nothing on
+     * conflict and the watermark never went back (D-164). What this window does now is keep the common case
+     * to a single computation — without it, the extensions that land between midnight and 00:30 would mark
+     * every single day for recomputation. {@link #recomputeDirtyDays()} covers what it cannot bound, so
+     * being generous here is cheap and being wrong here is no longer permanent.
      */
     private static final Duration GRACE = Duration.ofHours(1);
 
@@ -116,7 +116,13 @@ public class VisitorDailyRollup {
                 (s.site_id, s.city_geoname_id), (s.site_id, s.browser), (s.site_id, s.os),
                 (s.site_id, s.device_type), (s.site_id, s.entry_page), (s.site_id, s.exit_page),
                 (s.site_id))
-            on conflict (site_id, utc_day, dimension, value) do nothing
+            on conflict (site_id, utc_day, dimension, value) do update set
+                label        = excluded.label,
+                visitors     = excluded.visitors,
+                visits       = excluded.visits,
+                pageviews    = excluded.pageviews,
+                bounces      = excluded.bounces,
+                duration_sum = excluded.duration_sum
             """;
 
     /**
@@ -138,7 +144,9 @@ public class VisitorDailyRollup {
             from analytics.api_events e
             where e.timestamp >= :dayStart and e.timestamp < :dayEnd
             group by e.site_id, coalesce(e.pathname, '')
-            on conflict (site_id, utc_day, dimension, value) do nothing
+            -- Only the one figure this dimension stores. The other four stay null because a page row never
+            -- had them, and the label because a path is its own name.
+            on conflict (site_id, utc_day, dimension, value) do update set visitors = excluded.visitors
             """;
 
     private final JdbcClient jdbc;
@@ -154,10 +162,43 @@ public class VisitorDailyRollup {
         Gauge.builder("analytics.visitor_daily.days_behind", daysBehind::get)
                 .description("Finished UTC days not yet rolled up; reports fall back to counting them live")
                 .register(meters);
+        // The second half of that question, and the one D-164 recorded as having no answer: a day the
+        // watermark already claims but whose sessions have moved since. The gauge above reads zero for it,
+        // because the rollup is not behind — it is wrong, which is worse and was invisible.
+        //
+        // Read from the table at scrape time rather than from a counter in this object, and not for the
+        // reason the outbox gauge is: here it is necessary. The marks are written by the consumer's thread
+        // and cleared by this one, so a field on this class would only ever see half of what happened.
+        Gauge.builder("analytics.visitor_daily.dirty_days", this, VisitorDailyRollup::countDirtyDays)
+                .description("Counted UTC days whose sessions have changed since; awaiting recomputation")
+                .register(meters);
     }
 
+    /** NaN rather than zero when the query fails: "nothing to redo" and "cannot tell" are different answers. */
+    private double countDirtyDays() {
+        try {
+            Long count = jdbc.sql("select count(*) from analytics.visitor_daily_dirty")
+                    .query(Long.class)
+                    .single();
+            return count == null ? Double.NaN : count;
+        } catch (RuntimeException e) {
+            log.debug("Could not read the dirty day count", e);
+            return Double.NaN;
+        }
+    }
+
+    /**
+     * Two jobs: move forward over the days nobody has counted, then count again the days somebody has
+     * changed since. The second has to run even when the first has nothing to do, which is why it is not
+     * inside the early return below.
+     */
     @Scheduled(initialDelayString = "PT1M", fixedDelayString = "PT10M")
     public void catchUp() {
+        advance();
+        recomputeDirtyDays();
+    }
+
+    private void advance() {
         LocalDate lastComplete = lastDayToCompute(clock.instant());
         LocalDate next = nextDayToCompute().orElse(null);
         if (next == null || next.isAfter(lastComplete)) {
@@ -168,13 +209,63 @@ public class VisitorDailyRollup {
         daysBehind.set(lastComplete.toEpochDay() - next.toEpochDay() + 1);
         int done = 0;
         while (!next.isAfter(lastComplete) && done < MAX_DAYS_PER_RUN) {
-            compute(next);
+            computeRows(next);
+            markCovered(next);
             next = next.plusDays(1);
             done++;
             daysBehind.decrementAndGet();
         }
         log.info("Rolled up {} day(s) of visitors, through {}; {} still behind", done, next.minusDays(1),
                 daysBehind.get());
+    }
+
+    /**
+     * Counts again the days a batch landed for after they had already been counted (Q-21, D-164).
+     * <p>
+     * Oldest first and capped, like the forward pass: an outage of a week leaves a week of marks, and one run
+     * should not hold the thread for as long as it takes to redo all of them.
+     * <p>
+     * Recompute, then clear the mark — never the other way round. A crash in between leaves a day marked
+     * whose rows are already correct, and the next run redoes work; the reverse leaves a day whose mark is
+     * gone and whose rows are not, which is the silent shortfall this whole mechanism exists to remove. The
+     * same ordering argument as the watermark's, for the same reason.
+     * <p>
+     * The clear matches on the mark it read, so a batch that landed while this was recomputing is not thrown
+     * away: its mark is a different value, the delete does nothing, and the day is recomputed again next run.
+     * That is also why the recompute is not wrapped in one transaction with the clear — it would not help,
+     * since the batch commits independently either way, and it would hold a write lock for the length of a
+     * full day's aggregation.
+     */
+    private void recomputeDirtyDays() {
+        List<DirtyDay> dirty = jdbc.sql("""
+                        select utc_day, marked from analytics.visitor_daily_dirty
+                        order by utc_day limit :limit""")
+                .param("limit", MAX_DAYS_PER_RUN)
+                .query((rs, row) -> new DirtyDay(rs.getObject("utc_day", LocalDate.class), rs.getLong("marked")))
+                .list();
+        if (dirty.isEmpty()) {
+            return;
+        }
+        int recomputed = 0;
+        for (DirtyDay day : dirty) {
+            computeRows(day.day());
+            int cleared = jdbc.sql("""
+                            delete from analytics.visitor_daily_dirty
+                            where utc_day = :day and marked = :marked""")
+                    .param("day", day.day())
+                    .param("marked", day.marked())
+                    .update();
+            if (cleared == 0) {
+                log.info("{} was marked again while it was being recomputed; leaving it for the next run",
+                        day.day());
+            }
+            recomputed++;
+        }
+        log.info("Recomputed {} day(s) whose rollup had fallen behind the sessions", recomputed);
+    }
+
+    /** A day awaiting recomputation, and which mark asked for it. */
+    private record DirtyDay(LocalDate day, long marked) {
     }
 
     /**
@@ -204,20 +295,25 @@ public class VisitorDailyRollup {
     }
 
     /**
-     * One day — both statements, since the watermark covers the whole table and not one dimension at a time —
-     * and then the watermark they move. Deliberately separate transactions rather than one, and safe because
-     * of the order and not in spite of it: a crash between them leaves rows whose day the watermark does not
-     * yet claim, and the next run simply computes that day again, which the {@code on conflict do nothing}
-     * turns into a no-op. The reverse order would be the unsafe one — a watermark claiming a day whose rows
-     * were never written is a day that is silently missing from every report over it.
+     * One day's rows — both statements, since a day is covered as a whole and not one dimension at a time.
      * <p>
-     * It was annotated {@code @Transactional} at first, which did nothing at all: {@link #catchUp()} calls
-     * this directly, so the call never leaves the object and never passes the proxy that would have begun
-     * the transaction. The annotation is gone rather than worked around, because the ordering above is the
-     * thing that actually provides the guarantee and a second mechanism claiming to provide it only hides
-     * which one is load-bearing.
+     * Writing the rows and moving the watermark are separate on purpose, and safe because of the order
+     * rather than in spite of it: a crash between them leaves rows whose day the watermark does not yet
+     * claim, and the next run computes that day again, which the upsert makes harmless. The reverse order
+     * would be the unsafe one — a watermark claiming a day whose rows were never written is a day silently
+     * missing from every report over it.
+     * <p>
+     * It is also why this is a method of its own rather than part of the step that advances the watermark: a
+     * day being recomputed because it fell behind must not drag the watermark back to itself. The watermark
+     * is a statement about how far the table reaches, not about which day was touched last.
+     * <p>
+     * {@code compute} was annotated {@code @Transactional} at first, which did nothing at all:
+     * {@link #catchUp()} calls it directly, so the call never leaves the object and never passes the proxy
+     * that would have begun the transaction. The annotation is gone rather than worked around, because the
+     * ordering above is the thing that actually provides the guarantee and a second mechanism claiming to
+     * provide it only hides which one is load-bearing.
      */
-    void compute(LocalDate day) {
+    void computeRows(LocalDate day) {
         for (String statement : new String[] {COMPUTE, COMPUTE_PAGES}) {
             jdbc.sql(statement)
                     .param("day", day)
@@ -225,6 +321,9 @@ public class VisitorDailyRollup {
                     .param("dayEnd", day.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC))
                     .update();
         }
+    }
+
+    private void markCovered(LocalDate day) {
         jdbc.sql("update analytics.visitor_daily_watermark set covered_through = :day, updated_at = now()")
                 .param("day", day)
                 .update();

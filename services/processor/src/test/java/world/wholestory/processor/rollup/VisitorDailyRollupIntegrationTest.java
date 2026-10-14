@@ -6,14 +6,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import world.wholestory.contracts.RawEventV1;
 import world.wholestory.contracts.UuidV7;
 import world.wholestory.processor.TestcontainersConfiguration;
+import world.wholestory.processor.enrichment.ClientProfile;
+import world.wholestory.processor.enrichment.EnrichedEvent;
+import world.wholestory.processor.sessionization.SessionizedEvent;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +37,8 @@ class VisitorDailyRollupIntegrationTest {
     JdbcClient jdbc;
     @Autowired
     VisitorDailyRollup rollup;
+    @Autowired
+    VisitorDailyDirtyDays dirtyDays;
 
     /**
      * The watermark is one row for the whole database, so without this the first test to run would carry it
@@ -48,6 +55,7 @@ class VisitorDailyRollupIntegrationTest {
     @BeforeEach
     void startFromNothingRolledUp() {
         jdbc.sql("delete from analytics.visitor_daily").update();
+        jdbc.sql("delete from analytics.visitor_daily_dirty").update();
         jdbc.sql("update analytics.visitor_daily_watermark set covered_through = null").update();
     }
 
@@ -158,8 +166,88 @@ class VisitorDailyRollupIntegrationTest {
     }
 
     /**
-     * A day that has not settled is left alone. Counting it would freeze a figure that is not final, and the
-     * insert does nothing on conflict, so it would never be corrected.
+     * The hole V4 left open and Q-21 recorded: an outage longer than the grace period means sessions arrive
+     * for a day that has already been counted. They used to be dropped — the insert did nothing on conflict
+     * and the watermark never went back — so every report over a range containing that day was short, and
+     * {@code days_behind} read zero because the rollup was not behind.
+     * <p>
+     * The figure is checked against counting the sessions live rather than against a number written here,
+     * because a number written here would only prove the fixture was read twice the same way.
+     */
+    @Test
+    void aSessionArrivingAfterItsDayWasCountedIsPickedUpAgain() {
+        UUID site = UUID.randomUUID();
+        session(site, LAST, 1201L, "TR", "Chrome");
+
+        rollup.catchUp();
+        assertThat(visitorsFor(site, "TOTAL", "", LAST, LAST.plusDays(1))).isEqualTo(1);
+        assertThat(watermark()).isEqualTo(LAST);
+
+        // The late batch: another visitor on a day the watermark already claims, marked the way the
+        // persister marks it, inside the transaction that stored the rows.
+        session(site, LAST, 1202L, "TR", "Chrome");
+        dirtyDays.mark(List.of(storedEvent(site, LAST, 1202L)));
+        assertThat(dirtyDayCount()).isEqualTo(1);
+
+        rollup.catchUp();
+
+        assertThat(visitorsFor(site, "TOTAL", "", LAST, LAST.plusDays(1)))
+                .as("the recomputed day has to equal what counting its sessions live would give")
+                .isEqualTo(liveVisitorsOn(site, LAST))
+                .isEqualTo(2);
+        assertThat(dirtyDayCount()).as("and the mark is cleared once the day is correct").isZero();
+        assertThat(watermark())
+                .as("recomputing an old day must not drag the watermark back to it")
+                .isEqualTo(LAST);
+    }
+
+    /**
+     * In healthy operation nothing is ever marked, which is what keeps this mechanism free: a batch belongs
+     * to today and today is always beyond the watermark. Without this the grace period's whole purpose would
+     * be lost — every day would be marked by the visits that are still being extended after midnight.
+     */
+    @Test
+    void aBatchForADayTheWatermarkHasNotReachedLeavesNoMark() {
+        UUID site = UUID.randomUUID();
+        session(site, LAST, 1301L, "TR", "Chrome");
+        jdbc.sql("update analytics.visitor_daily_watermark set covered_through = :day")
+                .param("day", LAST.minusDays(1))
+                .update();
+
+        dirtyDays.mark(List.of(storedEvent(site, LAST, 1301L)));
+
+        assertThat(dirtyDayCount()).isZero();
+    }
+
+    /**
+     * The property the job's conditional delete rests on: a second mark is a different value, so a mark made
+     * while a day was being recomputed is not cleared by the run that never saw it.
+     * <p>
+     * This asserts the precondition rather than the race itself — interleaving the job's read and its delete
+     * would need a seam in production code that exists only for the test. What it does rule out is the
+     * version of this table that stored a timestamp, where two marks could share one.
+     */
+    @Test
+    void markingADayAgainChangesTheMarkTheJobWillClear() {
+        UUID site = UUID.randomUUID();
+        session(site, LAST, 1401L, "TR", "Chrome");
+        rollup.catchUp();
+
+        dirtyDays.mark(List.of(storedEvent(site, LAST, 1401L)));
+        long first = markOf(LAST);
+        dirtyDays.mark(List.of(storedEvent(site, LAST, 1401L)));
+        long second = markOf(LAST);
+
+        assertThat(second).isNotEqualTo(first);
+    }
+
+    /**
+     * A day that has not settled is left alone.
+     * <p>
+     * This used to be a correctness rule — counting early froze a figure that could never be corrected. It is
+     * now an efficiency one: a day counted too early would be marked and recomputed, so the cost of being
+     * early is repeated work rather than a wrong number. The behaviour is still the right one, which is why
+     * the test stays.
      */
     @Test
     void aDayThatHasNotSettledIsLeftAlone() {
@@ -270,6 +358,39 @@ class VisitorDailyRollupIntegrationTest {
                 .update();
         pageview(site, visit, visitor, at, entryPage);
         pageview(site, visit, visitor, at.plus(60, ChronoUnit.SECONDS), exitPage);
+    }
+
+    /**
+     * What the persister hands to the marker: one stored event, with only the fields the marking reads —
+     * the event's own timestamp and its session's start. Built here rather than through the pipeline because
+     * what is being tested is the marking, and a Kafka round trip would decide the timestamps itself.
+     */
+    private SessionizedEvent storedEvent(UUID site, LocalDate day, long visitor) {
+        Instant at = day.atTime(12, 0).toInstant(ZoneOffset.UTC);
+        RawEventV1 event = new RawEventV1(RawEventV1.SCHEMA_VERSION, UuidV7.generate(at), at, site, visitor,
+                null, RawEventV1.PAGEVIEW, "example.test", "/", null, null, null, null, null, null,
+                null, null, null, null, null, null, null);
+        return new SessionizedEvent(new EnrichedEvent(event, ClientProfile.UNKNOWN, null),
+                UuidV7.generate(at), at);
+    }
+
+    private long dirtyDayCount() {
+        return jdbc.sql("select count(*) from analytics.visitor_daily_dirty").query(Long.class).single();
+    }
+
+    private long markOf(LocalDate day) {
+        return jdbc.sql("select marked from analytics.visitor_daily_dirty where utc_day = ?")
+                .params(day)
+                .query(Long.class).single();
+    }
+
+    /** The day's own visitors, counted the way a report with no rollup would count them. */
+    private long liveVisitorsOn(UUID site, LocalDate day) {
+        return jdbc.sql("""
+                        select count(distinct visitor_hash) from analytics.sessions
+                        where site_id = ? and started_at >= ? and started_at < ?""")
+                .params(site, at(day), at(day.plusDays(1)))
+                .query(Long.class).single();
     }
 
     /** The same figure the rollup is meant to reproduce, counted from the sessions it summarises. */
