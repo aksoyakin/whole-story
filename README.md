@@ -55,7 +55,7 @@ for thirty**. The figure the work below is quoted against is a **twelve-month** 
 buttons do not reach it, but the date fields beside them do, up to a capped 366 days, and that is where the
 costs that grow with the range show up at all.
 
-Four changes, each measured at render level rather than on the query alone:
+Five changes, each measured at render level rather than on the query alone:
 
 - planning reporting queries for the arguments they actually get, rather than letting a generic plan be
   reused (−24%);
@@ -67,13 +67,18 @@ Four changes, each measured at render level rather than on the query alone:
   page breakdown itself 18.9 s → 133 ms);
 - rolling up the entry and exit pages too, which are the same path axis seen from the visit and therefore
   two more grouping sets in a statement that already reads the day, not another pass over it (twelve months
-  26.2 → 17.2 s, the two cards 3.8 s and 4.0 s → 148 ms and 62 ms).
+  26.2 → 17.2 s, the two cards 3.8 s and 4.0 s → 148 ms and 62 ms);
+- matching each goal before counting it, instead of asking for a distinct count per goal over every row the
+  scan touched — identical answers from a far smaller input, adopted after measuring that what it buys
+  depends on how selective the goal is (twelve months, the goals endpoint 12.3 → 7.0 s, a whole render
+  18.6 → 13.3 s). The time series stopped computing the measure the chart does not draw in the same round:
+  the pageview chart went from about 4.8 s to 474 ms.
 
-Twelve months is now seventeen seconds, and fifteen of those are two endpoints: the goals, which are
-user-defined and retroactive and so have nothing to pre-aggregate, and the time series, whose buckets are the
-site's local days while the rollup's grain is the UTC day — one local day straddles two, so no daily rollup
-can answer it. The cheap dimensions are all taken; that is the state of the work rather than a figure to be
-proud of.
+Twelve months is now thirteen seconds and twelve of those are two endpoints. What remains in each is the part
+that cannot be pre-aggregated, for two different reasons: a goal matching a *set* of paths needs distinct
+visitors across that set, which is not the sum of the per-path counts, and the visitors series buckets by the
+site's local day while the hashing salt rotates on the UTC day, so one local day straddles two. Those are
+properties of the design rather than work left undone, which is the more useful thing for a figure to be.
 
 The method, the deviations from production, the full tables, the defect the load test found, an optimisation
 that measured twice as fast and changed nothing, and two measurements that turned out to be measuring the

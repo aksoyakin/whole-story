@@ -29,11 +29,20 @@ they are counted from sessions. That split decides the source of every number he
   draw the quiet days instead of closing the gap.
 - **A value that is not known is its own row**, under an empty key the dashboard prints as "Unknown", so a
   breakdown still adds up to the total.
-- **The dashboard draws one measure at a time.** Visitors and pageviews are different scales; two y-axes would let
-  the scaling decide what the picture says. A toggle switches which one is drawn, which also means a single
-  series — no legend, and no second colour to find in a theme that is deliberately without hue. The palette was
-  checked rather than eyeballed: as a categorical palette the neutral ramp fails (no chroma, adjacent steps
-  indistinguishable), while as a single series or a sequential ramp it is sound. The form follows that result.
+- **The dashboard draws one measure at a time, and asks for one.** Visitors and pageviews are different scales;
+  two y-axes would let the scaling decide what the picture says. A toggle switches which one is drawn, which also
+  means a single series — no legend, and no second colour to find in a theme that is deliberately without hue.
+  The palette was checked rather than eyeballed: as a categorical palette the neutral ramp fails (no chroma,
+  adjacent steps indistinguishable), while as a single series or a sequential ramp it is sound. The form follows
+  that result.
+
+  The endpoint took a while to follow it. It returned both measures for every bucket while the chart and the
+  server-rendered table beside it each printed whichever one the reader had selected, so one of the two was
+  computed, serialised and discarded on every render — the same mistake the breakdown contract made until it was
+  narrowed to one number. It matters here because the two cost nothing alike: pageviews are summed from an hourly
+  rollup, while visitors are a distinct count per bucket over the sessions. Measured over twelve months, the
+  pageview chart went from about 4.8 s to 474 ms, and the visitors chart lost the pageview query it had never
+  drawn. A point now carries one `value` and the request names the measure.
 - Every row of a ranked list carries its own number, so the bar beside it is a comparison aid rather than the only
   way to read the value.
 
@@ -85,8 +94,9 @@ The dashboard offers today, seven days and thirty, and a range somebody types. A
 The cap exists because the cost of one of these requests grows with the range and is not bounded by anything
 else. Half of these endpoints answer without a session — a shared dashboard serves whoever holds the link
 (ADR 0019 is about which domains may *write*; nothing equivalent limits who may *read* a shared site) — so
-"the caller has an account" is not a limit. Measured, a twelve-month report is about 24 seconds of database
-work on a 49M event corpus, and it grows from there.
+"the caller has an account" is not a limit. Measured, a twelve-month report was about 24 seconds of database
+work on a 49M event corpus when this cap was set, and 13 seconds after two rounds of work on the endpoints
+behind it. The figure moves; what does not is that it grows with the range, which is what the cap is for.
 
 366 rather than a round number: a year plus the leap day, so "the last year" always fits. It is also the
 longest range that has been measured end to end, and a limit you have measured is one you can defend. The

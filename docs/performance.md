@@ -677,17 +677,118 @@ path per day rather than the 2 an upper bound would assume, because not every pa
 every day. Filling 712 days went from 156 s to 236 s, though the two are not a clean comparison: the earlier
 run wrote into an empty table while this one re-ran eight dimensions as no-ops on top of inserting two.
 
+### The series stops computing what nobody draws
+
+The chart draws one measure at a time and the table beside it prints the same one (ADR 0020), so a render has
+never shown visitors and pageviews together. The endpoint returned both anyway, for every bucket, which made
+one of the two a scan whose result was serialised and thrown away. It is the mistake the breakdown contract
+made before it was narrowed to a single number, one endpoint over.
+
+It matters here because the two measures cost nothing alike. Pageviews are summed from an hourly rollup;
+visitors are a distinct count per bucket over the sessions, and over a long range that is the entire price of
+the endpoint.
+
+| twelve months, nothing filtered | before | after |
+|---|---:|---:|
+| the chart on **pageviews** | ~4,971 ms | **474 ms** |
+| the chart on **visitors** (the default) | 4,971 ms | **4,356 ms** |
+
+Both arms come from the same run, which is what makes them comparable: the old endpoint computed the two
+together, so a single figure was all it could report, and 4,356 + 474 = 4,830 against the 4,971 it used to
+cost. The decomposition adds up, which is the evidence that the mechanism is "one query instead of two"
+rather than something that happened to be faster that afternoon.
+
+The default view is still a 4.4 s scan. Nothing here changes that, and nothing can: a bucket is a day in the
+site's own timezone (ADR 0020) while the rollup's grain is the UTC day (ADR 0005), and one local day
+straddles two of them. A rollup keyed on the site's local day was measured on this corpus and overcounted by
+16%, because a visitor crossing a UTC midnight carries two different hashes. So the visitors series is a
+scan at any range, and that is a property of the privacy design rather than a thing left undone.
+
+### Taking the goals apart, and the one number that decided the fix
+
+The goals were the largest remaining endpoint, and the first thing was to attribute the cost rather than
+guess at it. Each variant five times, median reported, every output column cast to text so no aggregate could
+be skipped (D-154):
+
+| twelve months, two goals | median | min–max |
+|---|---:|---|
+| the scan alone | 507 ms | 489–1,035 |
+| + both predicates, no distinct | 3,571 ms | 3,180–5,123 |
+| + one distinct | 5,802 ms | 5,730–6,243 |
+| what the endpoint sent | 8,307 ms | 6,494–8,977 |
+| a candidate rewrite | 7,230 ms | 6,511–8,273 |
+
+So the scan was 6% of it, evaluating the predicates 37%, and the distinct counts 57%. The candidate — match
+first in a lateral, then one distinct grouped by goal, instead of one distinct per goal over everything —
+came out 13% better with the ranges overlapping, which is not a result.
+
+The reason it was not a result turned out to be the corpus. The wildcard goal `/blog/*` matches **18,114,398
+of 23,270,944 events**, so "the matching rows" is 78% of the scan and there is nothing for the lateral to
+narrow. That made the obvious next question the useful one: does the rewrite depend on how selective the goal
+is? It does, and decisively.
+
+| twelve months, one selective goal (`Signup`: 125,778 of 23.3M events) | median | min–max |
+|---|---:|---|
+| the shape the endpoint sent | 5,873 ms | 5,789–6,108 |
+| the candidate | **3,210 ms** | 2,907–3,390 |
+
+That is −45% with the two ranges not touching. The mechanism is visible once stated:
+`count(distinct case when <match> then visitor_hash end)` evaluates the CASE for every scanned row and feeds
+all of them — nulls included — into the distinct machinery, because the aggregate never sees the predicate.
+The lateral filters first, so the distinct's input is the matches rather than the scan. When the predicate is
+selective that is a two-hundred-fold smaller input; when it matches 78% of the rows it is barely smaller.
+
+A conversion is a selective thing by nature — a signup, a checkout, one page. A goal that fires on 78% of
+pageviews is not a conversion, it is traffic. So the rewrite was adopted on the selectivity evidence, and the
+corpus gained a third goal so that it holds all three shapes the product has: an event name, an exact page,
+and a wildcard. The wildcard stays precisely because it is the worst case.
+
+**Exactness was checked before speed.** Both shapes, computed over one identical window, agree to the unit on
+all three goals and both of their numbers. Worth recording how the first attempt at that check failed: the
+endpoint's answer was about 0.3% above hand-written SQL across every figure, in the same direction, which
+looked like a defect and was a window. The site is `Europe/Istanbul`, so the endpoint cuts its days at +03
+while the SQL cut them in UTC — the same thirty days, shifted three hours. Comparing an endpoint against SQL
+means reproducing the site's timezone boundaries, or comparing the two shapes to each other instead, which is
+what the check above does.
+
+Render level, same corpus and the same three goals in both arms, five iterations, medians:
+
+| twelve months, nothing filtered | before | after | |
+|---|---:|---:|---:|
+| **the goals** | 12,336 ms | **6,985 ms** | **−43%** |
+| **a whole render** | 18,626 ms | **13,305 ms** | **−29%** |
+| the goals, filtered | 5,613 ms | 4,658 ms | −17% |
+| summary (control) | 521 ms | 519 ms | −0.3% |
+| page breakdown (control) | 287 ms | 303 ms | +5.4% |
+| country breakdown (control) | 124 ms | 123 ms | −1.2% |
+
+The goals gave up 5,350 ms and the page gave up 5,321 ms, so the whole of the render's improvement is
+attributable to the one endpoint that changed. The untouched endpoints moved between −1.2% and +5.4%, which
+is this rig's spread on the day — tighter than the 8.9% the previous round saw, and the reason to report it
+every time rather than carry a number forward.
+
+The 18,626 ms baseline is not comparable to the 17.2 s quoted earlier: that was two goals and this is three.
+The pair above is internally consistent, which is what a before and after has to be.
+
 ### What is slow now
 
-A render over a twelve-month range is 17.2 s, and two endpoints are 15.4 of them: the goals at 10.5 s and the
-timeseries at 5.0 s. Everything else together is under 1.2 s. Thirty days, which is the longest the three
-period buttons offer, is a twentieth of that.
+A render over a twelve-month range is 13.3 s, and two endpoints are 11.7 of them: the goals at 7.0 s and the
+visitors series at 4.7 s. Everything else together is under 1.2 s. Thirty days, which is the longest the three
+period buttons offer, is a small fraction of it.
 
-Both of the remaining two are hard, and for different reasons. The goals are hard because there is nothing to
-pre-aggregate: a goal is defined by whoever owns the site, at any time, and reports history from before it
-existed (D-122). The timeseries is hard because of where two decisions meet — its buckets are the site's own
-local days (ADR 0020) and the rollup's grain is the UTC day (ADR 0005), and one local day straddles two UTC
-days, so a daily rollup cannot answer it at any price. The cheap dimensions are now all taken.
+What is left in each is the part that cannot be pre-aggregated, and the two reasons are different.
+
+The goals are now 57% distinct counting over the rows that match, which is the irreducible half of the
+question "how many different people did this". Some shapes could be answered from a rollup: an exact page goal
+is already a row in `visitor_daily`, and an event name would be a cheap dimension to add, since
+`custom_event_hourly` carries that axis at an hourly grain already — the same argument that brought the page
+in. A wildcard page goal cannot be, ever: distinct visitors over a *set* of paths is not the sum of the
+per-path counts, and no amount of pre-aggregation makes it one. That is the shape the remaining 7 s is mostly
+spent on, and serving the other two from rollups would mean one card fed by three sources that can disagree —
+which is a trade to make deliberately, with a measurement, and not yet.
+
+The visitors series is structural, for the reason given above: the salt's grain is the UTC day and the
+chart's bucket is the site's local day.
 
 ### Two mistakes in the measuring, both of which read as good news
 

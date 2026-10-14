@@ -62,9 +62,25 @@ and ends with `-off`" and `/a_b` as "any single character between a and b" — b
 they say, and a goal that over-counts is worse than one that refuses, because the number still looks plausible.
 
 ### Conversions are counted from the events, in one pass
-Each goal contributes two expressions to a single query over `api_events`: the distinct visitors who completed
-it, and how many times it happened. The denominator of the rate is the period's visitors from `api_sessions`,
-which is the same number the summary tile shows, so the page agrees with itself.
+Every goal is answered by a single query over `api_events`: the distinct visitors who completed it, and how
+many times it happened. The denominator of the rate is the period's visitors — the same number the summary
+tile shows, so the page agrees with itself.
+
+**The shape of that one pass was rewritten later, on a measurement.** It began as two expressions per goal,
+`count(distinct case when <match> then visitor_hash end)` and a filtered count. That is correct and it is
+wasteful in a way worth naming: the CASE is evaluated for every scanned row and all of them, nulls included,
+are fed into the distinct machinery, because the aggregate never sees the predicate. Matching first in a
+lateral and then counting one distinct grouped by goal gives the identical answer from a far smaller input.
+
+How much smaller depends entirely on how selective the goal is, which is the part that had to be measured
+rather than assumed. On a goal matching 125,778 of 23.3M events the rewrite was 5,873 ms → 3,210 ms with the
+ranges not overlapping; on one matching 78% of them it was 8,307 → 7,230 ms, a difference inside the spread.
+A conversion is selective by nature — a signup, a checkout, one page — so it was adopted, and at render level
+over twelve months the endpoint went from 12.3 s to 7.0 s. See `docs/performance.md`.
+
+A goal nobody completed produces no row from that query, so the reader fills it with zeroes. That is the only
+thing the rewrite changed about the answer, which is why "every definition is reported, including the unmet
+ones" is a test of its own rather than a property of the SQL.
 
 This departs from the data model's first sketch, which had the completion count coming from the hourly rollups.
 A conversion rate needs the visitors who converted, which is a distinct count and therefore not something a
