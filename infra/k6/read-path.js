@@ -17,8 +17,8 @@
 //   the whole matrix per iteration  Period x endpoint x filtered, in a fixed order, repeated. Every
 //                                   combination therefore gets the same number of samples and the same
 //                                   cache conditions, which is what makes them comparable to each other.
-//   a dashboard total               The page makes twelve requests: a summary, a timeseries, the goals, the
-//                                   realtime count and eight breakdowns. Timing them individually says which
+//   a dashboard total               The page makes fourteen requests: a summary, a timeseries, the goals, the
+//                                   realtime count and ten breakdowns. Timing them individually says which
 //                                   is slow; timing the set says whether the page is.
 //
 // The public endpoints are used rather than the owner's. The SQL is identical — the rules are shared in
@@ -35,8 +35,9 @@ const ITERATIONS = Number(__ENV.ITERATIONS || 10);
 
 const ROOT = `${BASE}/api/public/sites/${DOMAIN}/stats`;
 
-// The eight cards the dashboard draws, in the order it draws them.
-const DIMENSIONS = ['PAGE', 'SOURCE', 'COUNTRY', 'REGION', 'CITY', 'BROWSER', 'OS', 'DEVICE'];
+// The ten cards the dashboard draws, in the order it draws them. Entry and exit page joined the set
+// with D-166; a render total that still summed eight would quietly flatter the page.
+const DIMENSIONS = ['PAGE', 'ENTRY_PAGE', 'EXIT_PAGE', 'SOURCE', 'COUNTRY', 'REGION', 'CITY', 'BROWSER', 'OS', 'DEVICE'];
 
 // A filter the corpus actually contains, so that the filtered path measures work rather than an empty result.
 const FILTER = 'COUNTRY:TR';
@@ -172,7 +173,7 @@ export function handleSummary(data) {
   for (const r of rows) {
     out += `${pad(r.key, 42)}${num(r.min)}${num(r.med)}${num(r.p95)}${num(r.max)}\n`;
   }
-  out += '\nDashboard rows are the sum of the twelve requests the page makes.\n';
+  out += '\nDashboard rows are the sum of the fourteen requests the page makes.\n';
 
   return {
     stdout: out,

@@ -82,6 +82,16 @@ with visitors as (select count(distinct s.visitor_hash) as total from analytics.
                      where e.site_id = $1 and e.timestamp >= $2 and e.timestamp < $3)
 select v.total, c.* from visitors v cross join conversions c $q$),
 
+-- Priced separately from the source card because its cardinality is nothing like it: a site has a handful of
+-- sources and hundreds of entry pages, and the render sum below would otherwise charge two of the ten cards
+-- at a rate that does not apply to them. Exit page is the same shape and is taken as equal to this one.
+(9, 'breakdown: entry page (sessions, high cardinality)', $q$
+select coalesce(s.entry_page::text, '') as key, count(distinct s.visitor_hash) as visitors,
+       count(*) as visits, coalesce(sum(s.pageviews), 0) as pageviews
+from analytics.api_sessions s
+where s.site_id = $1 and s.started_at >= $2 and s.started_at < $3
+group by 1 order by visitors desc, key limit 10 $q$),
+
 (8, 'timeseries, daily buckets (ADR 0020)', $q$
 with buckets as (select generate_series($2::date, $3::date, interval '1 day')::date as bucket),
      visitors as (select (s.started_at at time zone 'Europe/Istanbul')::date as bucket,
@@ -140,13 +150,20 @@ group by q.n, q.label
 order by median_ms desc;
 
 -- The whole page, which is the only figure a visitor experiences: a dashboard render issues a summary, a
--- timeseries, the goals, the realtime count and eight breakdowns. Summed from the medians above rather than
+-- timeseries, the goals, the realtime count and **ten** breakdowns. Summed from the medians above rather than
 -- measured as one request, because the web app issues them concurrently and what this says is how much
 -- database work one render asks for.
+--
+-- Ten and not eight since the entry and exit page cards were added (D-166). Those two are charged at the
+-- entry page's own rate rather than the source card's, because a site has a handful of sources and hundreds
+-- of entry pages. The remaining seven are still priced by the source card and that is still an
+-- underestimate: region and city group far more values than a source does (D-154). An underestimate is
+-- stated rather than quietly carried.
 with med as (select t.n, percentile_cont(0.5) within group (order by t.ms) as ms from timing t group by t.n)
 select round((select ms from med where n = 1)        -- the summary
            + (select ms from med where n = 8)        -- the timeseries
            + (select ms from med where n = 7)        -- the goals
            + (select ms from med where n = 4)        -- the page breakdown, grouped from events
-           + 7 * (select ms from med where n = 3))   -- the seven breakdowns that read sessions
+           + 2 * (select ms from med where n = 9)    -- the entry and exit page cards
+           + 7 * (select ms from med where n = 3))   -- the seven lower cardinality cards on sessions
        as one_render_of_database_work_ms;

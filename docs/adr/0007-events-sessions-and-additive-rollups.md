@@ -62,6 +62,22 @@ Measured at render level: a twelve-month dashboard went from 70 s to 40 s and a 
 costs 253 MB against the sessions' 5 GB, and about 2% on the reports it does not serve, which now compete
 with it for cache. See `docs/performance.md`.
 
+**The page joined it afterwards**, which is a correction to the paragraph above rather than an exception to
+it. The rule was "not the high cardinality ones"; the measured rule is "not a *new* high cardinality axis".
+The pathname axis is already kept hourly in `page_hourly`, so a daily grain is a tenth of a rollup this
+schema carries anyway — 11,143,450 rows against 1,040,394 on the same corpus. It is also the first dimension
+rolled up from the events rather than the sessions, so the two partial days at the edges of a range are
+counted from the events too. A twelve-month dashboard went from 46.9 s to 24.4 s with it, the page breakdown
+itself from 18.9 s to 0.13 s, while the filtered control arm stayed put.
+
+That brought out a dependency worth stating plainly, because it is the premise this whole amendment rests
+on and it is enforced somewhere else entirely: **a `visitor_hash` must belong to exactly one UTC day.** For
+sessions that is free — a row has one `started_at`. For events it is true only because ingest computes the
+hash per event from that day's salt and `EventWriter` stores that event's own hash, with `previousVisitorHash`
+keeping the visit together across the boundary (D-028). Any future rollup counted from events inherits that
+dependency. The seeded corpus does not satisfy it, which is how it was found: it gives every event of a visit
+one hash, and the page figures came out 0.06% high.
+
 ## Implementation status
 Tables, partition creation and rollups are implemented. Dropping expired partitions and alerting on missing
 partitions are planned.

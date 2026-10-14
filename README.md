@@ -6,6 +6,8 @@ Privacy-first, cookieless web analytics. No cookies, no personal data, no IP add
 
 ## Architecture
 
+Context, container and component diagrams: [docs/architecture](docs/architecture/README.md).
+
 | Component | Responsibility |
 |---|---|
 | `services/ingest` | Receives events from the tracking script, hashes visitors, resolves GeoIP, drops the IP, publishes to Kafka |
@@ -15,7 +17,7 @@ Privacy-first, cookieless web analytics. No cookies, no personal data, no IP add
 | `web` | Next.js: landing page, dashboard, public shared dashboards |
 | `tracker` | Tracking script (< 1 KB) |
 | `infra` | Docker Compose, Prometheus, Grafana, k6 load tests |
-| `docs` | Architecture Decision Records and C4 diagrams |
+| `docs` | Architecture Decision Records, C4 diagrams, deployment and performance |
 
 ## Tech stack
 
@@ -45,8 +47,28 @@ generator on the same machine:
   delivery safe (ADR 0006).
 
 That is a floor rather than a capacity: at the highest rate the services used about 2.5 of the ten cores and
-the generator, not the service, was the limit. The method, the deviations from production, the full table and
-the defect the test found are in [docs/performance.md](docs/performance.md).
+the generator, not the service, was the limit.
+
+Reading is the slower half, and it was measured against a seeded corpus of 49.4M events over 24 months. A
+whole dashboard render, through the api, is **575 ms for today and 24.4 s for twelve months**. Three changes
+got it there, each measured at render level rather than on the query alone:
+
+- planning reporting queries for the arguments they actually get, rather than letting a generic plan be
+  reused (−24%);
+- counting each finished day's unique visitors once, so a range can add days up instead of reaching for
+  every session in it — unique visitors turn out to be additive across days, because the hashing salt
+  rotates daily (twelve months 70 → 40 s);
+- rolling the page breakdown up the same way, and dropping two numbers from the breakdown contract that
+  nothing had ever rendered — one of them cost nine seconds on its own (twelve months 46.9 → 24.4 s, the
+  page breakdown itself 18.9 s → 133 ms).
+
+Twelve months is still twenty-four seconds and ten of those are the goals, which are user-defined and
+retroactive and so have nothing to pre-aggregate. That is the next thing to work on rather than a figure to
+be proud of.
+
+The method, the deviations from production, the full tables, the defect the load test found, an optimisation
+that measured twice as fast and changed nothing, and two measurements that turned out to be measuring the
+measuring are all in [docs/performance.md](docs/performance.md).
 
 ## Licence
 

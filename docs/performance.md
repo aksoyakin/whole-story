@@ -467,14 +467,129 @@ before it is counted, which costs an hour of answering yesterday from the sessio
 hourly rollups never needed this, because they add to a running total and a late batch simply adds to it; a
 distinct count is not a total you can add to, which is the whole reason this table exists.
 
+### Taking the forty seconds apart before touching anything
+
+The obvious next move was to make those three endpoints faster. The first step was to find out what they
+were actually spending the time on, which turned out to answer the question differently than expected. Each
+statement run three times, median reported, same corpus, production settings:
+
+| | median |
+|---|---:|
+| **page breakdown, as it was** | **19,701 ms** |
+| → the scan and the grouping alone, no distinct counts | 3,327 ms |
+| → plus `count(distinct visitor_hash)` only | 11,895 ms |
+| → plus `count(distinct session_id)` only | 12,422 ms |
+| **goals, as they were** | **13,229 ms** |
+| → the denominator, counted from the sessions | 1,934 ms |
+| → the conversions, counted from the events | 10,646 ms |
+| → the denominator taken from the daily rollup instead | 0 ms |
+| **timeseries, as it was** | **4,455 ms** |
+| → the visitors, per local day from the sessions | 3,778 ms |
+| → the pageviews, from the hourly rollup | 407 ms |
+
+Three things fell out of it.
+
+**The page breakdown's scan was a sixth of its cost.** Reading all 49M events and grouping them by path is
+3.3 s; the two distinct counts on top are the other 16.4. That reframes the problem: the expensive thing is
+not the volume, it is counting distinct values over it.
+
+**One of those two counts was rendered nowhere.** `count(distinct session_id)` — nine seconds on its own —
+produced a `visits` figure that no card has ever drawn. Neither has the breakdown's `pageviews`. A breakdown
+row shows one number, the visitors, and ranks by it. Both fields were taken out of the contract rather than
+made faster, which is the cheapest optimisation available and the only one that cannot regress.
+
+**The goals' denominator was already sitting in a table.** It is the visitors of the period — the same number
+the summary tile shows — and `visitor_daily` has held it since the last round.
+
+**The timeseries cannot be helped by this rollup, and that is structural rather than unfinished.** Its
+buckets are the site's local days (ADR 0020) while the rollup's grain is the UTC day, because the UTC day is
+the salt's grain (ADR 0005) and the only one across which visitors add up. A local day straddles two UTC
+days, so there is no sum of whole rolled-up days that answers it. It is where two decisions meet, not a gap.
+
+### The page joins the rollup, and what the render did
+
+The pathname axis already existed in this schema, in `page_hourly`, at a grain twenty-four times finer than
+a day. That is what makes the page different from the dimensions the last round deliberately left out: an
+entry page or a campaign per day would be a second copy of the sessions, but a page per day is a tenth of a
+rollup already being kept. Measured on this corpus — `page_hourly` is 11,143,450 rows and the same pages at a
+daily grain are 1,040,394.
+
+So `PAGE` became a dimension of `visitor_daily` rather than a table of its own: one watermark, one job, one
+reader, one gauge. It is the only rolled up dimension computed from the events instead of the sessions, which
+the reader has to respect when it counts the two partial days at the edges of a range.
+
+Measured the same way as before — same corpus, two arms a few minutes apart, three iterations, median, and
+the **ten** cards the dashboard now draws rather than the eight it drew last time:
+
+| twelve months, nothing filtered | before | after | |
+|---|---:|---:|---:|
+| **the whole dashboard** | **46,911 ms** | **24,445 ms** | **−48%** |
+| page breakdown | 18,920 ms | **133 ms** | −99.3% |
+| goals | 12,655 ms | 10,769 ms | −15% |
+| timeseries | 6,094 ms | 5,490 ms | −10% |
+| entry page | 4,232 ms | 3,938 ms | −7% |
+| exit page | 3,727 ms | 3,330 ms | −11% |
+| summary | 571 ms | 424 ms | −26% |
+| **the same dashboard, filtered (control)** | **29,669 ms** | **29,208 ms** | **−1.6%** |
+
+The filtered arm is the control and it did not move, which is what says the gain came from the rollup path
+rather than from the machine being in a better mood.
+
+Of the 22.5 s the page lost, 20.7 s is attributable: 18.8 s from the page breakdown and 1.9 s from the goals'
+denominator. The remaining 1.8 s is spread across endpoints whose code did not change at all, and is
+run-to-run variation rather than an effect. Worth noting against the last round's lesson: the goals'
+saving came out at 1.9 s against the 1,934 ms the isolated measurement predicted. A spike reading can hold at
+render level — it just cannot be assumed to (D-158).
+
+The first of the three iterations took 81 s against the other two's ~34 s, because the new 460 MB of table
+had to be read in before it could help. The table went from 253 MB to 460 MB, and filling 712 days went from
+93 s to 156 s.
+
+### What this corpus cannot check, and why that was not noticed sooner
+
+The end-to-end check — ask api for the same breakdown before and after, and expect identical numbers — passed
+for every session-backed dimension and for the summary, and **failed for the page** by about 0.06%: the rolled
+up answer was slightly higher. That is the right direction for a specific mistake, so it was taken apart
+rather than waved away.
+
+| for the path `/`, over the rolled up interior of the range | |
+|---|---:|
+| A — what the rollup holds, summed | 2,045,669 |
+| B — the same days' distinct counts, computed live | 2,045,669 |
+| C — one distinct count over the whole window, live | 2,044,519 |
+| **A − B** (is the rollup faithful to its own definition?) | **0** |
+| **B − C** (do the days add up to the whole?) | **1,150** |
+
+The rollup computes exactly what it claims. What does not hold on this corpus is the premise underneath it:
+that a `visitor_hash` belongs to one UTC day. In `analytics.sessions` it does — zero hashes span two days in
+any month. In `analytics.events` it does not: 659 a month do.
+
+The reason is the seeder, not the product. Production computes the hash per event from the day's salt
+(ADR 0005), and `EventWriter` stores that event's own hash, so an event arriving after midnight carries the
+new day's hash and the sessionizer keeps the visit together through `previousVisitorHash` (D-028). The seeder
+instead gives every event of a visit the visit's single hash, so a visit crossing midnight lands the same
+hash in two days and the daily sums double count it.
+
+It had not been noticed because the dimensions rolled up until now all came from `sessions`, where a row has
+one `started_at` and therefore one day by construction. The page is the first one counted from `events`, and
+it is the first thing to depend on that property of events rather than of sessions.
+
+What this means in practice: the correctness of the page rollup is established by the integration test, whose
+fixture gives each day its own hashes exactly as production does, and **not** by this corpus, which cannot
+show it. The seeder should be fixed before the next read-path measurement — until it is, any future
+event-sourced rollup will show the same unexplained excess, and the next person to see it will have to redo
+this.
+
 ### What is slow now
 
-The twelve-month dashboard is forty seconds, and three endpoints are thirty-nine of them: the page breakdown
-at 19.5 s, the goals at 14.4 s and the timeseries at 5.5 s. All three are grouped from events rather than
-sessions, which is 49M rows against 16.7M, and none of them is a distinct count that a daily grain would
-fix in the same way — the timeseries is cut in the site's own timezone, and the goals are user-defined. That
-is the next thing to measure, and the figure to beat is now the one in the table above rather than the one
-this section started with.
+The twelve-month dashboard is 24.4 s, and four endpoints are 23.5 of them: the goals at 10.8 s, the
+timeseries at 5.5 s, and the entry and exit page cards at 3.9 and 3.3 s.
+
+The goals are the big one and the hardest: a goal is defined by whoever owns the site, at any time, and
+reports history from before it existed (D-122), so there is nothing to have pre-aggregated. The entry and
+exit pages are the easy one and were not done here only because they were out of scope: they are
+session-backed, their cardinality is the same order as the pages', and the measurement above is the argument
+that the cardinality is affordable. The timeseries is the structural one, for the reason given further up.
 
 ### Two mistakes in the measuring, both of which read as good news
 
@@ -596,9 +711,16 @@ schema ownership is the boundary (D-012, D-037).
 
 ## Not measured yet
 
-- **What the page breakdown, the goals and the timeseries cost, and whether a rollup can help them.** They
-  are 39 of the 40 seconds a twelve-month render now takes. All three are grouped from events rather than
-  sessions, and none is a distinct count that the daily grain would fix the same way.
+- **Whether the goals can be made cheaper at all.** They are 10.8 of the 24.4 seconds a twelve-month render
+  now takes, and unlike everything else fixed so far there is no pre-aggregate to reach for: a goal is
+  user-defined and reports history from before it was created (D-122).
+- **The entry and exit page cards, which the page rollup's own argument covers.** 7.2 s between them, both
+  session-backed, both the same order of cardinality as the pages. Left out of the last round only because
+  it was scoped to the pages.
+- **Whether the corpus can check an event-sourced rollup.** It cannot today: the seeder gives every event of
+  a visit one `visitor_hash`, so a visit crossing midnight is counted in two UTC days, and the page rollup's
+  end-to-end check is 0.06% out because of it. Production assigns the hash per event from the day's salt, so
+  the fix is in the seeder. Until then the page rollup's correctness rests on its integration test.
 - **Where the read path's remaining HTTP overhead comes from.** The gap between summed database work and the
   end-to-end figure was mostly the generic plan, which is fixed above; what is left has not been accounted
   for, and the summed figure it is compared against prices seven of the breakdown cards by proxy.
