@@ -222,11 +222,24 @@ of three passes — a render is **961 ms / 5,421 ms / 17,402 ms / 170,721 ms** f
 
 ### What the measurement found
 
-**Today is fine and the default is not.** A day costs 575 ms of database work and nobody will notice it. The
-period the dashboard opens on is 30 days, and that costs **6.6 seconds** — issued as twelve concurrent
-requests, so the wall clock is better than the sum, but the database is asked for 6.6 seconds of work either
-way and it does not have twelve spare cores. A one-year custom range costs **66 seconds**, and `scope.md` puts
-custom ranges in v1.
+**Today is fine and the longer ranges are not.** A day costs 575 ms of database work and nobody will notice
+it. Seven days — the period the dashboard opens on — costs **3.1 seconds**, and thirty days, the longest the
+dashboard offers, costs **6.6 seconds**: issued as concurrent requests, so the wall clock is better than the
+sum, but the database is asked for 6.6 seconds of work either way and it does not have twelve spare cores.
+
+A one-year range costs **66 seconds**. Nothing in the dashboard can ask for it, which is worth stating
+plainly because the rest of this document leans on the figure: the UI offers three periods and `period.ts`
+quietly falls back to the default for anything else, while the api and the public stats endpoints take
+arbitrary `from` and `to`. So a twelve-month figure here is the api answering a range it really serves,
+reached by the measurement harness rather than by a person — a stress case, not a screen. It earns its place
+anyway, because custom ranges are in the v1 scope, and this is what one would cost on arrival.
+
+> **Correction.** The first version of this paragraph said the dashboard opens on thirty days. It opens on
+> seven, and had done since M3.3, which is long before this was written — so the sentence was not stale, it
+> was wrong when it was written. Noted rather than quietly fixed, because the error has a shape worth
+> recognising: the number was read off the measurement harness, which drives the api directly, instead of off
+> the thing the harness is standing in for.
+
 
 **Half of every total is two queries.** The page breakdown and the goals both group over events and both do a
 `COUNT(DISTINCT)`; between them they are 3.4 of the 6.6 seconds at 30 days. The remaining seven breakdown
@@ -426,7 +439,7 @@ Milliseconds, median of five, one request at a time, 49.4M events over 24 months
 | **whole dashboard** | **7,227** | **4,349** | **−40%** | **69,969** | **40,144** | **−43%** |
 | whole dashboard, filtered *(control)* | 2,205 | 2,231 | +1% | 28,054 | 29,106 | +4% |
 
-Seven breakdowns and the summary; a twelve-month dashboard from seventy seconds to forty. The endpoints the
+Seven breakdowns and the summary; a render over a twelve-month range from seventy seconds to forty. The endpoints the
 rollup answers stopped growing with the range: a twelve-month browser breakdown is now 19 ms against a
 thirty-day one at 7, where before it was 3,787 against 350. That is the point of the table rather than a
 side effect of it — the figures are sized by days times distinct values, not by events.
@@ -523,14 +536,14 @@ the **ten** cards the dashboard now draws rather than the eight it drew last tim
 
 | twelve months, nothing filtered | before | after | |
 |---|---:|---:|---:|
-| **the whole dashboard** | **46,911 ms** | **24,445 ms** | **−48%** |
+| **a whole render, all fourteen requests** | **46,911 ms** | **24,445 ms** | **−48%** |
 | page breakdown | 18,920 ms | **133 ms** | −99.3% |
 | goals | 12,655 ms | 10,769 ms | −15% |
 | timeseries | 6,094 ms | 5,490 ms | −10% |
 | entry page | 4,232 ms | 3,938 ms | −7% |
 | exit page | 3,727 ms | 3,330 ms | −11% |
 | summary | 571 ms | 424 ms | −26% |
-| **the same dashboard, filtered (control)** | **29,669 ms** | **29,208 ms** | **−1.6%** |
+| **the same render, filtered (control)** | **29,669 ms** | **29,208 ms** | **−1.6%** |
 
 The filtered arm is the control and it did not move, which is what says the gain came from the rollup path
 rather than from the machine being in a better mood.
@@ -582,8 +595,9 @@ this.
 
 ### What is slow now
 
-The twelve-month dashboard is 24.4 s, and four endpoints are 23.5 of them: the goals at 10.8 s, the
-timeseries at 5.5 s, and the entry and exit page cards at 3.9 and 3.3 s.
+A render over a twelve-month range is 24.4 s, and four endpoints are 23.5 of them: the goals at 10.8 s, the
+timeseries at 5.5 s, and the entry and exit page cards at 3.9 and 3.3 s. Thirty days, which is the longest
+the dashboard itself offers, is a twentieth of that.
 
 The goals are the big one and the hardest: a goal is defined by whoever owns the site, at any time, and
 reports history from before it existed (D-122), so there is nothing to have pre-aggregated. The entry and

@@ -57,8 +57,8 @@ day already counted, and they are never picked up, so reports over a range conta
 them. The remedy — marking a day dirty when a batch lands behind it and recomputing it — is not built, and
 the gauge saying how far behind the rollup is will not show this, because the rollup is not behind.
 
-Measured at render level: a twelve-month dashboard went from 70 s to 40 s and a thirty-day one from 7.2 s to
-4.3 s, with the endpoints it answers between 72% and 99.8% faster and no longer growing with the range. It
+Measured at render level: a render over a twelve-month range went from 70 s to 40 s and a thirty-day one
+from 7.2 s to 4.3 s, with the endpoints it answers between 72% and 99.8% faster and no longer growing with the range. It
 costs 253 MB against the sessions' 5 GB, and about 2% on the reports it does not serve, which now compete
 with it for cache. See `docs/performance.md`.
 
@@ -67,8 +67,10 @@ it. The rule was "not the high cardinality ones"; the measured rule is "not a *n
 The pathname axis is already kept hourly in `page_hourly`, so a daily grain is a tenth of a rollup this
 schema carries anyway — 11,143,450 rows against 1,040,394 on the same corpus. It is also the first dimension
 rolled up from the events rather than the sessions, so the two partial days at the edges of a range are
-counted from the events too. A twelve-month dashboard went from 46.9 s to 24.4 s with it, the page breakdown
-itself from 18.9 s to 0.13 s, while the filtered control arm stayed put.
+counted from the events too. A render over a twelve-month range went from 46.9 s to 24.4 s with it, the page
+breakdown itself from 18.9 s to 0.13 s, while the filtered control arm stayed put. Twelve months is a range
+the api serves and the dashboard does not currently offer — see `docs/performance.md` for why the figure is
+still the one worth quoting.
 
 That brought out a dependency worth stating plainly, because it is the premise this whole amendment rests
 on and it is enforced somewhere else entirely: **a `visitor_hash` must belong to exactly one UTC day.** For

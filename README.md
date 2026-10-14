@@ -49,9 +49,13 @@ generator on the same machine:
 That is a floor rather than a capacity: at the highest rate the services used about 2.5 of the ten cores and
 the generator, not the service, was the limit.
 
-Reading is the slower half, and it was measured against a seeded corpus of 49.4M events over 24 months. A
-whole dashboard render, through the api, is **575 ms for today and 24.4 s for twelve months**. Three changes
-got it there, each measured at render level rather than on the query alone:
+Reading is the slower half, and it was measured against a seeded corpus of 49.4M events over 24 months. The
+dashboard offers three periods, and a whole render costs **575 ms for today, 3.1 s for the seven days it
+opens on and 6.6 s for thirty**. The figure the work below is quoted against is a **twelve-month** range,
+which the api serves and the dashboard does not yet ask for. Custom ranges are in the v1 scope, so it is what
+one would cost on arrival, and it is where the costs that grow with the range actually show up.
+
+Three changes, each measured at render level rather than on the query alone:
 
 - planning reporting queries for the arguments they actually get, rather than letting a generic plan be
   reused (−24%);
