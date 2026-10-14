@@ -152,18 +152,31 @@ select site_id,
 from seed_sites
 on conflict do nothing;
 
--- Two goals, so the conversion query is measured with something to match: one event goal and one page
--- pattern with a wildcard, which are the two shapes that exist (ADR 0022).
+-- Three goals, one of each shape the product has, because the conversion query costs a different amount for
+-- each and a corpus holding only some of them measures only some of the product (ADR 0022).
+--
+--   an event name      what a conversion usually is, and highly selective: 125,778 of 23.3M events here.
+--   an exact page      the other common shape, and the only page goal a rollup could ever answer, since
+--                      distinct visitors over a *set* of paths is not the sum of the per-path counts.
+--   a page wildcard    the expensive one. On this corpus '/blog/*' matches 78% of all events, which is the
+--                      worst case for the conversion query and the reason it is kept: a goal that matches
+--                      most of the traffic is not a realistic conversion, but it is a realistic *shape*,
+--                      and it is where the query has to not fall over.
+--
+-- Deleted before being inserted, rather than `on conflict do nothing`. Goals are not in the truncate above —
+-- they live in another schema — so without this a run that changed the set would add to the old one instead
+-- of replacing it, and the measured figure would move for a reason nobody touched (the lesson of D-172,
+-- which is the same mistake one table over).
+delete from sites.goals where site_id in (select site_id from seed_sites);
+
 insert into sites.goals (id, site_id, type, event_name, page_path, created_at)
-select ('00000000-0000-7000-b000-' || lpad(to_hex(n * 2), 12, '0'))::uuid,
-       site_id, 'EVENT', 'Signup', null, now() - interval '3 years'
-from seed_sites
-on conflict do nothing;
-insert into sites.goals (id, site_id, type, event_name, page_path, created_at)
-select ('00000000-0000-7000-b000-' || lpad(to_hex(n * 2 + 1), 12, '0'))::uuid,
-       site_id, 'PAGEVIEW', null, '/blog/*', now() - interval '3 years'
-from seed_sites
-on conflict do nothing;
+select ('00000000-0000-7000-b000-' || lpad(to_hex(n * 3 + k), 12, '0'))::uuid,
+       site_id,
+       (array['EVENT', 'PAGEVIEW', 'PAGEVIEW'])[k + 1],
+       (array['Signup', null, null])[k + 1],
+       (array[null, '/pricing', '/blog/*'])[k + 1],
+       now() - interval '3 years'
+from seed_sites, generate_series(0, 2) k;
 
 -- ---------------------------------------------------------------------------------------------------------
 -- Partitions for every month being seeded, plus the current one.

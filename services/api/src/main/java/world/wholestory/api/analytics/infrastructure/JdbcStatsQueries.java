@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -235,7 +236,20 @@ class JdbcStatsQueries implements StatsQueries {
             """;
 
     /**
-     * Every goal in one pass over the events, two expressions each.
+     * Every goal in one pass over the events, matched first and counted after.
+     * <p>
+     * The shape matters more than it looks. It used to be two expressions per goal over the whole range —
+     * {@code count(distinct case when <match> then visitor_hash end)} — and that feeds *every scanned row*
+     * into the distinct machinery, nulls included, because the CASE is evaluated before the aggregate sees
+     * it. The lateral below filters first, so the distinct's input is the matching rows rather than all of
+     * them. Measured over twelve months on a selective goal, which is what a conversion normally is:
+     * 5,873 ms to 3,210 ms, with the two ranges not overlapping. On a goal matching 78% of the events the
+     * same rewrite gave 8,307 to 7,230 ms, a difference inside the spread — so what it buys is a function of
+     * how selective the goal is, and that is measured rather than assumed.
+     * <p>
+     * A goal nobody completed produces no row here, and the reader fills it with zeroes. An empty result
+     * therefore loses the denominator with it, which costs nothing: if nothing was completed every rate is
+     * zero whatever the denominator was.
      * <p>
      * The counting comes from {@code api_events} rather than from the rollups, which is a departure from the
      * first sketch of the data model and deliberate: a conversion rate needs the visitors who converted, which
@@ -247,10 +261,20 @@ class JdbcStatsQueries implements StatsQueries {
      * with itself.
      */
     private static final String GOAL_CONVERSIONS = """
-            with visitors as (%s),
-                 conversions as (select %s
-                                 %s)
-            select v.total, c.*
+            with visitors as (%1$s),
+                 matched as (select g.idx, e.visitor_hash
+                             from analytics.api_events e
+                             cross join lateral (select idx
+                                                 from (values %2$s) candidates(idx)
+                                                 where %3$s) g
+                             where e.site_id = :siteId
+                               and e.timestamp >= :start and e.timestamp < :end%4$s),
+                 conversions as (select idx,
+                                        count(distinct visitor_hash) as visitors,
+                                        count(*)                     as completions
+                                 from matched
+                                 group by idx)
+            select v.total, c.idx, c.visitors, c.completions
             from visitors v
                      cross join conversions c
             """;
@@ -430,7 +454,8 @@ class JdbcStatsQueries implements StatsQueries {
             return List.of();
         }
         FilterClauses clauses = FilterClauses.of(filters);
-        StringJoiner expressions = new StringJoiner(",\n                                        ");
+        StringJoiner candidates = new StringJoiner(", ");
+        StringJoiner predicates = new StringJoiner("\n                                                    or ");
         Map<String, Object> targets = new LinkedHashMap<>();
         for (int i = 0; i < goals.size(); i++) {
             GoalDefinition goal = goals.get(i);
@@ -441,8 +466,8 @@ class JdbcStatsQueries implements StatsQueries {
             String match = page
                     ? "(e.name = 'pageview' and e.pathname like :%s escape '\\')".formatted(parameter)
                     : "e.name = :%s".formatted(parameter);
-            expressions.add("count(distinct case when %s then e.visitor_hash end) as v%d".formatted(match, i));
-            expressions.add("count(*) filter (where %s) as c%d".formatted(match, i));
+            candidates.add("(%d)".formatted(i));
+            predicates.add("(idx = %d and %s)".formatted(i, match));
         }
 
         // Only the denominator can come from the rollup. The conversions cannot: a goal is defined by whoever
@@ -452,7 +477,7 @@ class JdbcStatsQueries implements StatsQueries {
         boolean fromRollup = coverage != null && coverage.usesRollup();
         String denominator = fromRollup ? VISITORS_FROM_ROLLUP : VISITORS_FROM_SESSIONS.formatted(sessions(clauses));
 
-        String sql = GOAL_CONVERSIONS.formatted(denominator, expressions, events(clauses));
+        String sql = GOAL_CONVERSIONS.formatted(denominator, candidates, predicates, clauses.onEvents());
         JdbcClient.StatementSpec statement = bind(sql, siteId, range, clauses);
         if (fromRollup) {
             statement = bindCoverage(statement, coverage);
@@ -460,19 +485,36 @@ class JdbcStatsQueries implements StatsQueries {
         for (Map.Entry<String, Object> target : targets.entrySet()) {
             statement = statement.param(target.getKey(), target.getValue());
         }
-        return statement.query((rs, row) -> read(rs, goals)).single();
+        List<Counted> counted = statement
+                .query((rs, row) -> new Counted(rs.getInt("idx"), rs.getLong("visitors"),
+                        rs.getLong("completions"), rs.getLong("total")))
+                .list();
+        return read(counted, goals);
     }
 
-    /** One row holds every goal's pair of numbers, plus the visitors they are a share of. */
-    private static List<GoalConversion> read(ResultSet rs, List<GoalDefinition> goals) throws SQLException {
-        long total = rs.getLong("total");
+    /** One row per goal that matched anything, with the visitors they are a share of repeated on each. */
+    private record Counted(int idx, long visitors, long completions, long total) {
+    }
+
+    /**
+     * Back into the order the goals were asked for, filling in the ones nobody completed. The query returns
+     * nothing for those, which is the one thing this shape changed about the answer and the reason the
+     * contract's promise — every definition, including the unmet ones — is a test of its own.
+     */
+    private static List<GoalConversion> read(List<Counted> counted, List<GoalDefinition> goals) {
+        Map<Integer, Counted> byIndex = new HashMap<>();
+        for (Counted row : counted) {
+            byIndex.put(row.idx(), row);
+        }
+        long total = counted.isEmpty() ? 0 : counted.getFirst().total();
         List<GoalConversion> conversions = new ArrayList<>(goals.size());
         for (int i = 0; i < goals.size(); i++) {
-            long visitors = rs.getLong("v" + i);
+            Counted row = byIndex.get(i);
+            long visitors = row == null ? 0 : row.visitors();
             conversions.add(new GoalConversion(
                     goals.get(i).goalId(),
                     visitors,
-                    rs.getLong("c" + i),
+                    row == null ? 0 : row.completions(),
                     total == 0 ? 0 : (double) visitors / total));
         }
         return conversions;
