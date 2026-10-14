@@ -44,6 +44,22 @@ class MetricsEndpointIntegrationTest {
                         .contains("kafka_consumer_fetch_manager_records_lag_max"));
     }
 
+    /**
+     * The two names the Grafana panel asks Prometheus for, spelled as the scrape actually spells them.
+     * <p>
+     * Here because a dashboard expression is a string with no compiler: Micrometer renames
+     * {@code analytics.visitor_daily.days_behind} on its way out, and a panel that guessed wrong would draw
+     * an empty graph rather than fail. This pins the two together, which matters more for these than for
+     * most — the whole point of them is to be the only warning that reports have gone quietly short, and a
+     * warning nobody can see is the state Q-21 was already in.
+     */
+    @Test
+    void publishesTheDailyRollupGaugesUnderTheNamesTheDashboardUses() {
+        String scrape = scrape(managementPort);
+        assertThat(scrape).contains("analytics_visitor_daily_days_behind");
+        assertThat(scrape).contains("analytics_visitor_daily_dirty_days");
+    }
+
     @Test
     void isNotReachableOnThePortTheWorldCanReach() {
         assertThat(status(servicePort)).isEqualTo(404);

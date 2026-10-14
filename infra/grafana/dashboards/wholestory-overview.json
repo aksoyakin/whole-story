@@ -468,6 +468,67 @@
       }
     },
     {
+      "type": "timeseries",
+      "title": "Daily rollup: days not counted, days to recount",
+      "description": "Two different ways the daily visitor rollup can disagree with the sessions, and they are not the same problem. 'not yet counted' means the job has not reached those days: reports simply count them live, so the answer is right and only slower, and this is what a fresh database or a rewound watermark looks like. 'to be recounted' means the opposite — the job already counted those days and their sessions have changed since, which happens when an outage outlasts the rollup's one-hour grace period (Q-21). Until the next run, every report over a range containing such a day is short by whatever arrived late, so a line that stays above zero for more than ten minutes is the one to chase. Both gauges are read from the database, and note which is missing when: the first existed from the start and had no panel, so for three rounds nothing could actually be seen.",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "analytics_visitor_daily_days_behind",
+          "legendFormat": "not yet counted",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "analytics_visitor_daily_dirty_days",
+          "legendFormat": "to be recounted",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "type": "row",
       "title": "Latency",
       "id": 102,
@@ -476,7 +537,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 32
       },
       "panels": []
     },
@@ -493,7 +554,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 33
       },
       "targets": [
         {
@@ -555,7 +616,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 33
       },
       "targets": [
         {
@@ -602,7 +663,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 41
       },
       "panels": []
     },
@@ -619,7 +680,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 42
       },
       "targets": [
         {
@@ -670,7 +731,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 42
       },
       "targets": [
         {
@@ -720,7 +781,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 49
       },
       "targets": [
         {
