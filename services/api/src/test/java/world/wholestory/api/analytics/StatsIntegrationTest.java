@@ -356,9 +356,12 @@ class StatsIntegrationTest {
 
         mvc.perform(breakdown(site, "PAGE"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.key == '/pricing')].pageviews").value(2))
                 .andExpect(jsonPath("$[?(@.key == '/pricing')].visitors").value(1))
-                .andExpect(jsonPath("$[?(@.key == '/pricing')].visits").value(1));
+                .andExpect(jsonPath("$[?(@.key == '/')].visitors").value(1))
+                // One number per row and no others: visits and pageviews were measured, found to be rendered
+                // nowhere, and taken out of the contract rather than computed for nobody (D-168).
+                .andExpect(jsonPath("$[0].visits").doesNotExist())
+                .andExpect(jsonPath("$[0].pageviews").doesNotExist());
     }
 
     @Test
@@ -463,8 +466,8 @@ class StatsIntegrationTest {
         mvc.perform(filtered(site, "breakdown", "ENTRY_PAGE:/docs").param("dimension", "PAGE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[?(@.key == '/docs')].pageviews").value(1))
-                .andExpect(jsonPath("$[?(@.key == '/pricing')].pageviews").value(1));
+                .andExpect(jsonPath("$[?(@.key == '/docs')].visitors").value(1))
+                .andExpect(jsonPath("$[?(@.key == '/pricing')].visitors").value(1));
     }
 
     /**

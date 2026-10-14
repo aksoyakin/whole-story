@@ -12,7 +12,8 @@ export type Summary = {
 };
 
 export type TimeseriesPoint = { bucket: string; visitors: number; pageviews: number };
-export type BreakdownEntry = { key: string; label: string; visitors: number; visits: number; pageviews: number };
+/** One number per row, which is what a breakdown card draws. See the api-side record for why the others went. */
+export type BreakdownEntry = { key: string; label: string; visitors: number };
 
 export type Dimension =
   | "PAGE"

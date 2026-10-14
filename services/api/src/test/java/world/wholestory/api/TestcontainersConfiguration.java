@@ -39,7 +39,11 @@ public class TestcontainersConfiguration {
                 .withCopyFileToContainer(
                         MountableFile.forHostPath(
                                 "../processor/src/main/resources/db/migration/V4__visitor_daily.sql"),
-                        "/docker-entrypoint-initdb.d/05-analytics-visitor-daily.sql");
+                        "/docker-entrypoint-initdb.d/05-analytics-visitor-daily.sql")
+                .withCopyFileToContainer(
+                        MountableFile.forHostPath(
+                                "../processor/src/main/resources/db/migration/V5__visitor_daily_pages.sql"),
+                        "/docker-entrypoint-initdb.d/06-analytics-visitor-daily-pages.sql");
     }
 
     /** The outbox externalizes site events to Kafka (ADR 0009). */

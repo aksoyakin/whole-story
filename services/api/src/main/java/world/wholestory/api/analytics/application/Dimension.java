@@ -16,7 +16,7 @@ package world.wholestory.api.analytics.application;
  */
 public enum Dimension {
 
-    PAGE(Source.EVENTS, "pathname", null, null, "pathname", false),
+    PAGE(Source.EVENTS, "pathname", null, null, "pathname", true),
     ENTRY_PAGE(Source.SESSIONS, "entry_page", null, "entry_page", null, false),
     EXIT_PAGE(Source.SESSIONS, "exit_page", null, "exit_page", null, false),
     SOURCE(Source.SESSIONS, "referrer_source", null, "referrer_source", "referrer_source", true),
@@ -58,6 +58,12 @@ public enum Dimension {
      * Whether the daily visitor rollup holds this dimension, and so whether a report over it may be answered
      * from there. High cardinality is why the rest are not: a row per entry page or per campaign per day
      * would make the rollup a second copy of the sessions rather than a summary of them.
+     * <p>
+     * The page is the exception, and it is in for a measured reason rather than against that one: the
+     * pathname axis is already kept at an hourly grain in {@code page_hourly}, so a daily grain is a tenth of
+     * a rollup this schema already carries, and over twelve months this was the most expensive breakdown on
+     * the dashboard. It is also the only rolled up dimension sourced from the events, which the reader has to
+     * respect when it counts the two partial days at the edges of a range.
      */
     public boolean rolledUp() {
         return rolledUp;

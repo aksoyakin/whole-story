@@ -39,7 +39,6 @@ final class StatsResponseMapper {
     }
 
     static BreakdownEntryResponse toResponse(BreakdownEntry entry) {
-        return new BreakdownEntryResponse(
-                entry.key(), entry.label(), entry.visitors(), entry.visits(), entry.pageviews());
+        return new BreakdownEntryResponse(entry.key(), entry.label(), entry.visitors());
     }
 }

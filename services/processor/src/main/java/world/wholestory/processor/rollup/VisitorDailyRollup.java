@@ -108,6 +108,28 @@ public class VisitorDailyRollup {
             on conflict (site_id, utc_day, dimension, value) do nothing
             """;
 
+    /**
+     * The page dimension, which is the one the dashboard asks for most and the one that cost the most.
+     * <p>
+     * A separate statement because it is the only dimension that is not a property of a visit: a page belongs
+     * to a pageview, so it is grouped from the events rather than from the sessions, and no grouping set over
+     * the sessions could have reached it.
+     * <p>
+     * Visitors is the only figure stored. The other columns are left null rather than filled with something
+     * defensible, because nothing reads them for this dimension and a page has no bounce rate or visit
+     * duration to report — and because {@code count(distinct session_id)}, the obvious thing to put in
+     * {@code visits}, is the exact work this rollup exists to stop doing.
+     */
+    private static final String COMPUTE_PAGES = """
+            insert into analytics.visitor_daily
+                (site_id, utc_day, dimension, value, label, visitors)
+            select e.site_id, :day, 'PAGE', coalesce(e.pathname, ''), null, count(distinct e.visitor_hash)
+            from analytics.api_events e
+            where e.timestamp >= :dayStart and e.timestamp < :dayEnd
+            group by e.site_id, coalesce(e.pathname, '')
+            on conflict (site_id, utc_day, dimension, value) do nothing
+            """;
+
     private final JdbcClient jdbc;
     private final Clock clock;
     private final AtomicLong daysBehind = new AtomicLong();
@@ -171,7 +193,8 @@ public class VisitorDailyRollup {
     }
 
     /**
-     * One day, then the watermark it moves. Deliberately two transactions rather than one, and safe because
+     * One day — both statements, since the watermark covers the whole table and not one dimension at a time —
+     * and then the watermark they move. Deliberately separate transactions rather than one, and safe because
      * of the order and not in spite of it: a crash between them leaves rows whose day the watermark does not
      * yet claim, and the next run simply computes that day again, which the {@code on conflict do nothing}
      * turns into a no-op. The reverse order would be the unsafe one — a watermark claiming a day whose rows
@@ -184,11 +207,13 @@ public class VisitorDailyRollup {
      * which one is load-bearing.
      */
     void compute(LocalDate day) {
-        jdbc.sql(COMPUTE)
-                .param("day", day)
-                .param("dayStart", day.atStartOfDay().atOffset(ZoneOffset.UTC))
-                .param("dayEnd", day.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC))
-                .update();
+        for (String statement : new String[] {COMPUTE, COMPUTE_PAGES}) {
+            jdbc.sql(statement)
+                    .param("day", day)
+                    .param("dayStart", day.atStartOfDay().atOffset(ZoneOffset.UTC))
+                    .param("dayEnd", day.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC))
+                    .update();
+        }
         jdbc.sql("update analytics.visitor_daily_watermark set covered_through = :day, updated_at = now()")
                 .param("day", day)
                 .update();

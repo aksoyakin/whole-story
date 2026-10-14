@@ -183,38 +183,45 @@ class JdbcStatsQueries implements StatsQueries {
 
     private static final String BREAKDOWN_FROM_ROLLUP = """
             select key,
-                   max(label)                  as label,
-                   coalesce(sum(visitors), 0)  as visitors,
-                   coalesce(sum(visits), 0)    as visits,
-                   coalesce(sum(pageviews), 0) as pageviews
-            from (select value as key, label, visitors, visits, pageviews
+                   max(label)                 as label,
+                   coalesce(sum(visitors), 0) as visitors
+            from (select value as key, label, visitors
                   from analytics.api_visitor_daily
                   where site_id = :siteId and dimension = :dimension
                     and utc_day >= :rollupFrom and utc_day < :rollupTo
                   union all
-                  select coalesce(s.%1$s::text, ''), %2$s, count(distinct s.visitor_hash), count(*),
-                         coalesce(sum(s.pageviews), 0)
-                  from analytics.api_sessions s
-                  where s.site_id = :siteId and s.started_at >= :headFrom and s.started_at < :headTo
-                  group by 1, 2
+                  %1$s
                   union all
-                  select coalesce(s.%1$s::text, ''), %2$s, count(distinct s.visitor_hash), count(*),
-                         coalesce(sum(s.pageviews), 0)
-                  from analytics.api_sessions s
-                  where s.site_id = :siteId and s.started_at >= :tailFrom and s.started_at < :tailTo
-                  group by 1, 2) parts
+                  %2$s) parts
             group by key
             order by visitors desc, key
             limit :limit
             """;
 
-    /** One session row carries visitors, visits and pageviews together, so these need a single pass. */
+    /** One partial day at an edge of the range, for a dimension the sessions carry. */
+    private static final String EDGE_FROM_SESSIONS = """
+            select coalesce(s.%1$s::text, ''), %2$s, count(distinct s.visitor_hash)
+                  from analytics.api_sessions s
+                  where s.site_id = :siteId and s.started_at >= :%3$sFrom and s.started_at < :%3$sTo
+                  group by 1, 2""";
+
+    /**
+     * The same edge, for a dimension only the events carry.
+     * <p>
+     * A page belongs to a pageview rather than to a visit, so the live remainder has to be grouped from the
+     * events exactly as an unrolled breakdown would be. Getting this wrong would not fail: it would quietly
+     * count the wrong rows at the two ends of every range.
+     */
+    private static final String EDGE_FROM_EVENTS = """
+            select coalesce(e.%1$s::text, ''), %2$s, count(distinct e.visitor_hash)
+                  from analytics.api_events e
+                  where e.site_id = :siteId and e.timestamp >= :%3$sFrom and e.timestamp < :%3$sTo
+                  group by 1, 2""";
+
     private static final String BREAKDOWN_BY_SESSION = """
-            select coalesce(s.%s::text, '')        as key,
-                   %s                              as label,
-                   count(distinct s.visitor_hash)  as visitors,
-                   count(*)                        as visits,
-                   coalesce(sum(s.pageviews), 0)   as pageviews
+            select coalesce(s.%s::text, '')       as key,
+                   %s                             as label,
+                   count(distinct s.visitor_hash) as visitors
             %s
             group by 1, 2
             order by visitors desc, key
@@ -234,8 +241,7 @@ class JdbcStatsQueries implements StatsQueries {
      * with itself.
      */
     private static final String GOAL_CONVERSIONS = """
-            with visitors as (select count(distinct s.visitor_hash) as total
-                              %s),
+            with visitors as (%s),
                  conversions as (select %s
                                  %s)
             select v.total, c.*
@@ -243,13 +249,39 @@ class JdbcStatsQueries implements StatsQueries {
                      cross join conversions c
             """;
 
+    private static final String VISITORS_FROM_SESSIONS = """
+            select count(distinct s.visitor_hash) as total
+            %s""";
+
+    /**
+     * The denominator, taken from the rollup wherever it reaches.
+     * <p>
+     * It is the same number the summary tile shows, counted the same way for the same reason — which is the
+     * point: the page has to agree with itself, so the two must not drift into different definitions. Measured
+     * over twelve months it was 1,934 ms from the sessions and effectively nothing from here, which made it a
+     * seventh of what the goals card cost for no change in the answer.
+     */
+    private static final String VISITORS_FROM_ROLLUP = """
+            select coalesce(sum(visitors), 0) as total
+            from (select visitors
+                  from analytics.api_visitor_daily
+                  where site_id = :siteId and dimension = 'TOTAL'
+                    and utc_day >= :rollupFrom and utc_day < :rollupTo
+                  union all
+                  select count(distinct s.visitor_hash)
+                  from analytics.api_sessions s
+                  where s.site_id = :siteId and s.started_at >= :headFrom and s.started_at < :headTo
+                  union all
+                  select count(distinct s.visitor_hash)
+                  from analytics.api_sessions s
+                  where s.site_id = :siteId and s.started_at >= :tailFrom and s.started_at < :tailTo) parts
+            """;
+
     /** A page belongs to a pageview, not to a visit, so this one is grouped from the events. */
     private static final String BREAKDOWN_BY_EVENT = """
-            select coalesce(e.%s::text, '')                     as key,
-                   %s                                            as label,
-                   count(distinct e.visitor_hash)                as visitors,
-                   count(distinct e.session_id)                  as visits,
-                   count(*) filter (where e.name = 'pageview')   as pageviews
+            select coalesce(e.%s::text, '')       as key,
+                   %s                             as label,
+                   count(distinct e.visitor_hash) as visitors
             %s
             group by 1, 2
             order by visitors desc, key
@@ -314,8 +346,11 @@ class JdbcStatsQueries implements StatsQueries {
         if (dimension.rolledUp() && !clauses.any()) {
             Coverage coverage = coverageOf(range);
             if (coverage.usesRollup()) {
-                String label = dimension.labelColumn() == null ? "null::text" : "s." + dimension.labelColumn();
-                String sql = BREAKDOWN_FROM_ROLLUP.formatted(dimension.keyColumn(), label);
+                String edge = fromEvents ? EDGE_FROM_EVENTS : EDGE_FROM_SESSIONS;
+                String label = labelExpression(dimension, fromEvents ? "e." : "s.");
+                String sql = BREAKDOWN_FROM_ROLLUP.formatted(
+                        edge.formatted(dimension.keyColumn(), label, "head"),
+                        edge.formatted(dimension.keyColumn(), label, "tail"));
                 return bindCoverage(bind(sql, siteId, range, clauses), coverage)
                         .param("dimension", dimension.name())
                         .param("limit", limit)
@@ -323,26 +358,26 @@ class JdbcStatsQueries implements StatsQueries {
                         .list();
             }
         }
-        String alias = fromEvents ? "e." : "s.";
-        String label = dimension.labelColumn() == null ? "null::text" : alias + dimension.labelColumn();
-        String sql = (fromEvents ? BREAKDOWN_BY_EVENT : BREAKDOWN_BY_SESSION)
-                .formatted(dimension.keyColumn(), label, fromEvents ? events(clauses) : sessions(clauses));
+        String sql = (fromEvents ? BREAKDOWN_BY_EVENT : BREAKDOWN_BY_SESSION).formatted(
+                dimension.keyColumn(),
+                labelExpression(dimension, fromEvents ? "e." : "s."),
+                fromEvents ? events(clauses) : sessions(clauses));
         return bind(sql, siteId, range, clauses)
                 .param("limit", limit)
                 .query((rs, row) -> entryOf(rs))
                 .list();
     }
 
+    /** Column names come from the enum, never from the request, so nothing a caller sends can shape the SQL. */
+    private static String labelExpression(Dimension dimension, String alias) {
+        return dimension.labelColumn() == null ? "null::text" : alias + dimension.labelColumn();
+    }
+
     /** Always a label: the client should not have to decide what to print when there is none. */
     private static BreakdownEntry entryOf(ResultSet rs) throws SQLException {
         String key = rs.getString("key");
         String label = rs.getString("label");
-        return new BreakdownEntry(
-                key,
-                label == null || label.isBlank() ? key : label,
-                rs.getLong("visitors"),
-                rs.getLong("visits"),
-                rs.getLong("pageviews"));
+        return new BreakdownEntry(key, label == null || label.isBlank() ? key : label, rs.getLong("visitors"));
     }
 
     /**
@@ -389,8 +424,18 @@ class JdbcStatsQueries implements StatsQueries {
             expressions.add("count(*) filter (where %s) as c%d".formatted(match, i));
         }
 
-        String sql = GOAL_CONVERSIONS.formatted(sessions(clauses), expressions, events(clauses));
+        // Only the denominator can come from the rollup. The conversions cannot: a goal is defined by whoever
+        // owns the site, at any time, and reports history from before it existed (D-122), so there is nothing
+        // to have pre-aggregated.
+        Coverage coverage = clauses.any() ? null : coverageOf(range);
+        boolean fromRollup = coverage != null && coverage.usesRollup();
+        String denominator = fromRollup ? VISITORS_FROM_ROLLUP : VISITORS_FROM_SESSIONS.formatted(sessions(clauses));
+
+        String sql = GOAL_CONVERSIONS.formatted(denominator, expressions, events(clauses));
         JdbcClient.StatementSpec statement = bind(sql, siteId, range, clauses);
+        if (fromRollup) {
+            statement = bindCoverage(statement, coverage);
+        }
         for (Map.Entry<String, Object> target : targets.entrySet()) {
             statement = statement.param(target.getKey(), target.getValue());
         }

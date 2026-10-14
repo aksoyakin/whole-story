@@ -94,6 +94,37 @@ class VisitorDailyRollupIntegrationTest {
     }
 
     /**
+     * The page is the only rolled up dimension that is not a property of a visit, so it is counted from the
+     * events and it is the one a grouping set over the sessions could never have reached. It adds up across
+     * days for the same reason the rest do — the salt rotates daily — and the figure is checked against
+     * counting the events live rather than against a number written here, because a number written here
+     * would only prove the fixture was read twice the same way.
+     */
+    @Test
+    void aPageIsCountedFromTheEventsAndAddsUpTheSameWay() {
+        UUID site = UUID.randomUUID();
+        session(site, LAST.minusDays(1), 701L, "TR", "Chrome");
+        session(site, LAST.minusDays(1), 702L, "TR", "Chrome");
+        session(site, LAST, 703L, "TR", "Chrome");
+
+        rollup.catchUp();
+
+        long summed = visitorsFor(site, "PAGE", "/pricing", LAST.minusDays(1), LAST.plusDays(1));
+        long live = jdbc.sql("""
+                        select count(distinct visitor_hash) from analytics.events
+                        where site_id = ? and pathname = '/pricing' and timestamp >= ? and timestamp < ?""")
+                .params(site, at(LAST.minusDays(1)), at(LAST.plusDays(1)))
+                .query(Long.class).single();
+
+        assertThat(summed).isEqualTo(live).isEqualTo(3);
+        // The columns a page row has no answer for are left empty rather than filled with a plausible zero.
+        assertThat(jdbc.sql("""
+                        select count(*) from analytics.visitor_daily
+                        where site_id = ? and dimension = 'PAGE' and visits is null and pageviews is null""")
+                .params(site).query(Long.class).single()).isPositive();
+    }
+
+    /**
      * A day that has not settled is left alone. Counting it would freeze a figure that is not final, and the
      * insert does nothing on conflict, so it would never be corrected.
      */
@@ -155,7 +186,7 @@ class VisitorDailyRollupIntegrationTest {
 
         assertThat(jdbc.sql("select distinct dimension from analytics.visitor_daily order by 1")
                 .query(String.class).list())
-                .containsExactly("BROWSER", "CITY", "COUNTRY", "DEVICE", "OS", "REGION", "SOURCE", "TOTAL");
+                .containsExactly("BROWSER", "CITY", "COUNTRY", "DEVICE", "OS", "PAGE", "REGION", "SOURCE", "TOTAL");
     }
 
     private long visitorsFor(UUID site, String dimension, String value, LocalDate from, LocalDate to) {
@@ -177,9 +208,17 @@ class VisitorDailyRollupIntegrationTest {
                 .query(LocalDate.class).single();
     }
 
-    /** Midday, so that nothing lands on a boundary by accident. */
+    /**
+     * Midday, so that nothing lands on a boundary by accident.
+     * <p>
+     * The two pageviews are written as well as the session row, because the page dimension is rolled up from
+     * the events and a session with no events is not a state this pipeline can produce. Seeding only the
+     * session would have modelled something that cannot happen, and the rollup would have looked complete
+     * while holding no page rows at all.
+     */
     private void session(UUID site, LocalDate day, long visitor, String country, String browser) {
         Instant at = day.atTime(12, 0).toInstant(ZoneOffset.UTC);
+        UUID visit = UuidV7.generate(at);
         jdbc.sql("""
                         insert into analytics.sessions
                             (session_id, started_at, site_id, visitor_hash, ended_at, pageviews, events,
@@ -187,8 +226,18 @@ class VisitorDailyRollupIntegrationTest {
                              city_geoname_id, city_name, browser, os, device_type)
                         values (?, ?, ?, ?, ?, 2, 2, '/', '/pricing', ?, 'TR-06', 'Ankara', 323786, 'Ankara',
                                 ?, 'macOS', 'desktop')""")
-                .params(UuidV7.generate(at), at(at), site, visitor, at(at.plus(60, ChronoUnit.SECONDS)),
-                        country, browser)
+                .params(visit, at(at), site, visitor, at(at.plus(60, ChronoUnit.SECONDS)), country, browser)
+                .update();
+        pageview(site, visit, visitor, at, "/");
+        pageview(site, visit, visitor, at.plus(60, ChronoUnit.SECONDS), "/pricing");
+    }
+
+    private void pageview(UUID site, UUID visit, long visitor, Instant at, String path) {
+        jdbc.sql("""
+                        insert into analytics.events
+                            (event_id, timestamp, site_id, session_id, visitor_hash, name, hostname, pathname)
+                        values (?, ?, ?, ?, ?, 'pageview', 'example.test', ?)""")
+                .params(UuidV7.generate(at), at(at), site, visit, visitor, path)
                 .update();
     }
 

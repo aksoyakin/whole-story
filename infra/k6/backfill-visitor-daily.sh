@@ -28,13 +28,19 @@ import re, sys
 
 source, target = sys.argv[1], sys.argv[2]
 java = open(source, encoding="utf-8").read()
-compute = re.search(r'private static final String COMPUTE = """\n(.*?)\n            """;', java, re.S)
-if not compute:
-    raise SystemExit("COMPUTE not found in %s; the rollup's SQL has moved" % source)
-
-sql = "\n".join(l[12:] if l.startswith(" " * 12) else l for l in compute.group(1).split("\n"))
-sql = sql.replace(":dayStart", "d::timestamptz").replace(":dayEnd", "(d + 1)::timestamptz").replace(":day", "d")
-body = "\n".join(("        " + l) if l.strip() else l for l in sql.split("\n")) + ";"
+# Every statement the rollup runs for one day, not just the first: the page dimension is computed by a
+# second one, and a backfill that extracted only the first would leave the page rows out while moving the
+# watermark past them -- which is the exact silent shortfall V5 exists to undo.
+names = ["COMPUTE", "COMPUTE_PAGES"]
+bodies = []
+for name in names:
+    found = re.search(r'private static final String %s = """\n(.*?)\n            """;' % name, java, re.S)
+    if not found:
+        raise SystemExit("%s not found in %s; the rollup's SQL has moved" % (name, source))
+    sql = "\n".join(l[12:] if l.startswith(" " * 12) else l for l in found.group(1).split("\n"))
+    sql = sql.replace(":dayStart", "d::timestamptz").replace(":dayEnd", "(d + 1)::timestamptz").replace(":day", "d")
+    bodies.append("\n".join(("        " + l) if l.strip() else l for l in sql.split("\n")) + ";")
+body = "\n".join(bodies)
 
 open(target, "w", encoding="utf-8").write("""\\timing on
 do $backfill$
