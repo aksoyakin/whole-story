@@ -37,7 +37,14 @@ public class SiteDataPurger {
             new Target("analytics.events", "event_id, timestamp"),
             new Target("analytics.sessions", "session_id, started_at"),
             new Target("analytics.page_hourly", "site_id, hour, pathname"),
-            new Target("analytics.custom_event_hourly", "site_id, hour, event_name"));
+            new Target("analytics.custom_event_hourly", "site_id, hour, event_name"),
+            // Added late, and the lateness is the lesson. visitor_daily arrived with V4 and was not added
+            // here, so for three rounds a removed site kept a row per day per dimension value — its
+            // countries, cities, regions and paths — while every check said the data was gone. Nothing
+            // caught it: the integration test counted exactly the tables this list names, so it asserted
+            // the implementation rather than the promise, and the live verification query was written from
+            // the same list. The promise is scope.md's, and it says *all* of it.
+            new Target("analytics.visitor_daily", "site_id, utc_day, dimension, value"));
 
     private static final String DELETE_CHUNK = """
             delete from %1$s where (%2$s) in (

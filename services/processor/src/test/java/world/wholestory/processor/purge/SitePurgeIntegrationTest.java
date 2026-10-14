@@ -58,7 +58,7 @@ class SitePurgeIntegrationTest {
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
                 assertThat(rowsFor(removed)).isZero());
         // The neighbour is the point of the test: a purge keyed on one site must not reach across to another.
-        assertThat(rowsFor(kept)).isEqualTo(4);
+        assertThat(rowsFor(kept)).isEqualTo(5);
     }
 
     /** The message can arrive more than once (ADR 0006), and replaying the compacted topic repeats it too. */
@@ -76,7 +76,7 @@ class SitePurgeIntegrationTest {
 
         await().pollDelay(Duration.ofSeconds(2)).until(() -> true);
         assertThat(rowsFor(removed)).isZero();
-        assertThat(rowsFor(kept)).isEqualTo(4);
+        assertThat(rowsFor(kept)).isEqualTo(5);
     }
 
     /** A site that never collected anything is the ordinary case for somebody who gave up on the snippet. */
@@ -97,7 +97,11 @@ class SitePurgeIntegrationTest {
 
     // --- fixtures -------------------------------------------------------------------------------------------
 
-    /** One row in each of the four tables that carry a site id. */
+    /**
+     * One row in each of the tables that carry a site id — every one of them, which is the property this
+     * fixture has to maintain and did not. It listed four while the schema held five, so the test agreed
+     * with the purger about what "everything" meant and neither of them was asked.
+     */
     private void seedEverything(UUID siteId) {
         Instant now = Instant.now();
         UUID sessionId = UuidV7.generate(now);
@@ -122,13 +126,25 @@ class SitePurgeIntegrationTest {
                         values (?, ?, 'Signup', 1)""")
                 .params(siteId, at(now.truncatedTo(ChronoUnit.HOURS)))
                 .update();
+        jdbc.sql("""
+                        insert into analytics.visitor_daily
+                            (site_id, utc_day, dimension, value, visitors, visits, pageviews, bounces,
+                             duration_sum)
+                        values (?, ?, 'TOTAL', '', 1, 1, 1, 1, 0)""")
+                .params(siteId, now.atOffset(ZoneOffset.UTC).toLocalDate())
+                .update();
     }
 
+    /**
+     * Every analytics table keyed by site, named here rather than derived from the purger's own list: a test
+     * that reads the implementation's definition of "everything" can only ever agree with it.
+     */
     private long rowsFor(UUID siteId) {
         return count("analytics.events", siteId)
                 + count("analytics.sessions", siteId)
                 + count("analytics.page_hourly", siteId)
-                + count("analytics.custom_event_hourly", siteId);
+                + count("analytics.custom_event_hourly", siteId)
+                + count("analytics.visitor_daily", siteId);
     }
 
     private long count(String table, UUID siteId) {
