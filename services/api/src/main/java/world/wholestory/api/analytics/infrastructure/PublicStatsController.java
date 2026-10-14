@@ -109,7 +109,7 @@ class PublicStatsController {
 
     /** Days belong to the site here too: a shared dashboard shows the same boundaries as its owner's. */
     private static DateRange rangeOf(ReadableSite site, LocalDate from, LocalDate to) {
-        return DateRange.of(from, to, site.timezone());
+        return StatsRequests.dateRange(from, to, site.timezone());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

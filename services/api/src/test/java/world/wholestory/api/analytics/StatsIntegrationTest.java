@@ -570,6 +570,21 @@ class StatsIntegrationTest {
                 .cookie(site.session());
     }
 
+    /**
+     * The ceiling on how long a range may be, at the boundary rather than near it: 366 days is answered and
+     * 367 is refused. Asserting the boundary is the point, because an off-by-one here is invisible -- both
+     * sides of it return a perfectly ordinary looking report.
+     */
+    @Test
+    void aRangeLongerThanTheCeilingIsRefused() throws Exception {
+        Site site = registerSite();
+
+        mvc.perform(stats(site, "summary", "2026-01-01", "2027-01-01", site.session()))
+                .andExpect(status().isOk());
+        mvc.perform(stats(site, "summary", "2026-01-01", "2027-01-02", site.session()))
+                .andExpect(status().isBadRequest());
+    }
+
     private MockHttpServletRequestBuilder stats(Site site, String report) {
         return stats(site, report, THE_DAY, THE_DAY, site.session());
     }

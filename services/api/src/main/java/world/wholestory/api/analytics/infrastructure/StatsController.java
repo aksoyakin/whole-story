@@ -114,7 +114,7 @@ class StatsController {
     private DateRange rangeFor(UUID siteId, AuthenticatedUser principal, LocalDate from, LocalDate to) {
         ReadableSite site = sites.readableBy(siteId, principal.getUserId())
                 .orElseThrow(SiteNotVisibleException::new);
-        return DateRange.of(from, to, site.timezone());
+        return StatsRequests.dateRange(from, to, site.timezone());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -167,6 +167,23 @@ class PublicStatsIntegrationTest {
 
     // --- fixtures -------------------------------------------------------------------------------------------
 
+    /**
+     * And the same ceiling without a session, which is the half that matters: a shared dashboard answers
+     * whoever holds the link, so nothing about having an account bounds what one request can cost.
+     */
+    @Test
+    void aRangeLongerThanTheCeilingIsRefusedWithoutASessionToo() throws Exception {
+        Site site = registerSite();
+        share(site, true);
+
+        mvc.perform(get("/api/public/sites/{domain}/stats/summary", site.domain())
+                        .param("from", "2026-01-01").param("to", "2027-01-01"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/public/sites/{domain}/stats/summary", site.domain())
+                        .param("from", "2026-01-01").param("to", "2027-01-02"))
+                .andExpect(status().isBadRequest());
+    }
+
     private MockHttpServletRequestBuilder publicStats(Site site, String report) {
         return get("/api/public/sites/{domain}/stats/{report}", site.domain(), report)
                 .param("from", THE_DAY)
