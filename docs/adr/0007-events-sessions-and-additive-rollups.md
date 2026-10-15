@@ -133,9 +133,64 @@ keeping the visit together across the boundary (D-028). Any future rollup counte
 dependency. The seeded corpus does not satisfy it, which is how it was found: it gives every event of a visit
 one hash, and the page figures came out 0.06% high.
 
+## Amendment: expiring the raw data turned out to change what the api may answer
+
+The decision above says raw data is kept 24 months. Only half of it was built — a job creates monthly
+partitions ahead of time — and the other half lived in the status note below, as "planned", from the day
+this was written. Building it is where the interesting part is, because dropping an old month is not only a disk operation: it narrows what
+this service can honestly be asked.
+
+A report is not answered from one place. The interior UTC days of a range come from `visitor_daily`, which is
+kept indefinitely, while the two partial days at its edges are counted live from the sessions or the events,
+because a site's day is cut in its own timezone and so a range almost never begins on a UTC midnight. Drop
+the raw data under an edge and that edge counts zero: a thirty-day report reaching just past the horizon
+comes back about a day short, silently. A *filtered* report comes back empty, because a filter cannot be
+answered from the rollup at all, while the summary's pageview figure stays where it was, since `page_hourly`
+is also kept forever. Every number on the page would have looked plausible and the page would have
+contradicted itself.
+
+So the horizon is published rather than kept inside the service that enforces it. After dropping, partition
+maintenance records the first day the raw data still covers, in a one-row table with a view of its own
+(`api_raw_data_retention`, the same shape as the rollup's watermark), and api refuses a range that begins
+before it. Refusing rather than shortening is the choice [ADR 0020](0020-reporting-queries.md) already made
+for the ceiling on how long a range may be, for the same reason: somebody asked for a specific window.
+
+Four things about it are decisions rather than details:
+
+- **The published horizon comes from the catalogue, not from the constant.** It is the lower bound of the
+  oldest partition that actually survived. The two differ in every case that matters — before anything has
+  ever been dropped, on a database younger than the horizon, and on one carrying a partition the job declined
+  to recognise — and the difference is always in the safe direction: api cannot promise history that is gone.
+  It also means a shorter retention could never make a report wrong, only make reports reach less far back,
+  which is why the relationship between the retention and the 366-day ceiling needs no guard.
+- **What may be dropped is chosen from the catalogue too, with the bounds read rather than assumed.** A loop
+  over generated partition names can only find what it already assumed: it would keep a month attached under
+  an unexpected name forever, and it would aim an irreversible statement at whatever answered to the name it
+  expected. The bounds are extracted in SQL and cast back to `timestamptz` instead of compared as text,
+  because the literal `pg_get_expr` prints is rendered in the session's timezone while the literal carries
+  its own offset. Anything that is not a plain range — a DEFAULT, an open-ended bound — is left alone and
+  logged.
+- **A month goes when all of it is older than the horizon, never when part of it is**, which makes the window
+  24 to 25 months rather than exactly 24. The implementation is the generous direction, and it is worth
+  stating rather than rounding away.
+- **The floor is compared as an instant, not as a date.** The horizon is a UTC day; a range starts at the
+  site's local midnight. In Istanbul a range beginning on the first retained day starts three hours before
+  the raw data does, and those three hours are precisely the edge that is counted live. A date comparison
+  would have accepted it.
+
+Two consequences are honest to write down. The first is that this cannot be verified in production for two
+years: the database was created in October 2026, so nothing in it becomes droppable until late 2028. The
+proof is an integration test that puts partitions on either side of a boundary two years wide, and that was
+watched failing with the drop removed. The second is that the deploy order matters once, in the direction
+compose already handles — api reads a view processor's migration creates, and api does not start until
+processor is healthy and its migrations have run.
+
+What is still missing is the other half of the status note: nothing yet reports how far ahead the partitions
+reach, and a missing partition fails an insert outright.
+
 ## Implementation status
-Tables, partition creation and rollups are implemented. Dropping expired partitions and alerting on missing
-partitions are planned.
+Tables, partition creation, the rollups and the expiry of old partitions are implemented. Alerting on
+missing partitions is still planned.
 
 The bounce flag is no longer stored on the session row: its definition moved into the `api_sessions` view, so that
 redefining it does not rewrite partitions and applies to history as well. See

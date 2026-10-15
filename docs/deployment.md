@@ -134,6 +134,37 @@ psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZ
 
 Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
+## Old months are dropped, and it cannot be undone
+
+`processor` keeps monthly partitions of `analytics.events` and `analytics.sessions` in both directions: it
+creates the next two months ahead of time, and it drops a month once all of it is older than the 24 months
+of raw data the design keeps ([ADR 0007](adr/0007-events-sessions-and-additive-rollups.md)). It runs at
+startup and daily at 03:00 UTC, and it names every partition it drops in the log before dropping it:
+
+```
+Dropping analytics.events_2026_09, covering 2026-09-01T00:00:00Z to 2026-10-01T00:00:00Z: entirely older
+than 2028-10-01T00:00:00Z, the 24 months of raw data kept
+Raw events and sessions now reach back to 2026-10-01
+```
+
+Three things follow for whoever operates this:
+
+- **There is no recovery.** A dropped partition is gone, and the rollups built from it (`page_hourly`,
+  `custom_event_hourly`, `visitor_daily`) are all that remains of those months. They are deliberately kept
+  forever.
+- **The horizon is published, and the reports obey it.** The second line above is written to
+  `analytics.raw_data_retention`, and `api` refuses a report that begins before it with a `400` rather than
+  answering it short — the two partial days at the edges of a range are counted from the raw data, so a range
+  reaching past the horizon would quietly lose them. To see where it stands:
+
+  ```sql
+  select retained_from, updated_at from analytics.raw_data_retention;
+  ```
+
+- **A partition whose bounds the job does not recognise is left alone, and says so**, at `WARN`:
+  `Leaving analytics.<name> alone: its bounds are not a range this job recognises`. That means hand-written
+  DDL created it; nothing is lost, but it will never be dropped either, and `retained_from` ignores it.
+
 ## Clearing what an earlier purge left behind
 
 `visitor_daily` was missing from the purge for as long as it has existed, so a database that removed a site
