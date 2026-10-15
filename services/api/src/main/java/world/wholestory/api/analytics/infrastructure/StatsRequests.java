@@ -7,6 +7,7 @@ import world.wholestory.api.analytics.application.GoalDefinition;
 import world.wholestory.api.site.ReadableGoal;
 
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -44,12 +45,41 @@ final class StatsRequests {
      * answering a different one without saying so is the kind of silently wrong number this codebase keeps
      * finding the expensive way.
      */
-    static DateRange dateRange(LocalDate from, LocalDate to, String timezone) {
+    static DateRange dateRange(LocalDate from, LocalDate to, String timezone, LocalDate retainedFrom) {
         DateRange range = DateRange.of(from, to, timezone);
         if (range.days() > MAX_RANGE_DAYS) {
             throw new IllegalArgumentException("a range may cover at most " + MAX_RANGE_DAYS + " days");
         }
+        requireWithinRetention(range, retainedFrom);
         return range;
+    }
+
+    /**
+     * A range may not begin before the raw data does, and for the same reason the ceiling above refuses
+     * rather than shortens: the answer would be wrong rather than smaller.
+     * <p>
+     * Only the interior UTC days of a range are answered from the daily rollup, which is kept indefinitely;
+     * the two partial days at its edges are counted live, because a site's day is cut in its own timezone and
+     * never on a UTC midnight (ADR 0020, D-160). Once the raw data under an edge has been dropped, that edge
+     * counts zero — roughly a day missing from a thirty-day report, silently — and a filtered report, which
+     * cannot use the rollup at all (D-103), comes back empty while the summary's pageviews stay where they
+     * are, because the hourly rollup behind them is also kept forever. Every number would look plausible.
+     * <p>
+     * Compared as instants rather than as dates, which is not pedantry: the horizon is a UTC day and the
+     * range starts at the site's local midnight. In Istanbul a range beginning on the first retained day
+     * starts three hours before the raw data does, and those three hours are exactly the edge that is
+     * counted live. A date comparison would accept it.
+     * <p>
+     * No horizon means no floor. Nothing has been dropped on a database that has never published one, so
+     * every day a range can name is still there.
+     */
+    private static void requireWithinRetention(DateRange range, LocalDate retainedFrom) {
+        if (retainedFrom == null) {
+            return;
+        }
+        if (range.start().isBefore(retainedFrom.atStartOfDay(ZoneOffset.UTC).toInstant())) {
+            throw new IllegalArgumentException("reports reach back to " + retainedFrom);
+        }
     }
 
     static int breakdownSize(int limit) {

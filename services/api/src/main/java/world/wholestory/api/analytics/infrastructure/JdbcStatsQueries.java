@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.UUID;
 
@@ -423,6 +424,22 @@ class JdbcStatsQueries implements StatsQueries {
         String key = rs.getString("key");
         String label = rs.getString("label");
         return new BreakdownEntry(key, label == null || label.isBlank() ? key : label, rs.getLong("visitors"));
+    }
+
+    /**
+     * How far back the raw data reaches, which is the other side of the same question {@link #coverageOf}
+     * asks and the reason both are one-row reads rather than one.
+     * <p>
+     * Read per request rather than cached. It changes once a day, so a cache would be nearly always right —
+     * and wrong in the direction that matters: a stale horizon is an older one, which accepts a range whose
+     * edges have already been dropped and answers it short. The read is a single row from a one-row table,
+     * the same cost as the watermark beside it.
+     */
+    @Override
+    public Optional<LocalDate> retainedFrom() {
+        return jdbc.sql("select retained_from from analytics.api_raw_data_retention")
+                .query(LocalDate.class)
+                .optional();
     }
 
     /**

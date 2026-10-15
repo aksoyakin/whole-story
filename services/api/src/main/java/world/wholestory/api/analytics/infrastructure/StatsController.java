@@ -112,11 +112,16 @@ class StatsController {
                 .toList();
     }
 
-    /** Authorization and the site's timezone in one answer; a site nobody may read answers like a missing one. */
+    /**
+     * Authorization and the site's timezone in one answer; a site nobody may read answers like a missing one.
+     * <p>
+     * The retention horizon joins them because a range is only answerable as far back as the raw data goes:
+     * the rollup covers a range's interior days, but its two edge days are counted live (D-160, D-033).
+     */
     private DateRange rangeFor(UUID siteId, AuthenticatedUser principal, LocalDate from, LocalDate to) {
         ReadableSite site = sites.readableBy(siteId, principal.getUserId())
                 .orElseThrow(SiteNotVisibleException::new);
-        return StatsRequests.dateRange(from, to, site.timezone());
+        return StatsRequests.dateRange(from, to, site.timezone(), stats.retainedFrom().orElse(null));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

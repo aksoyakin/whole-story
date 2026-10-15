@@ -63,6 +63,7 @@ class StatsIntegrationTest {
         seed = JdbcClient.create(dataSource);
         ensurePartitions();
         startFromNothingRolledUp();
+        startWithNoRetentionHorizon();
     }
 
     /**
@@ -75,6 +76,16 @@ class StatsIntegrationTest {
     @AfterEach
     void leaveNothingRolledUp() {
         startFromNothingRolledUp();
+        startWithNoRetentionHorizon();
+    }
+
+    /**
+     * The published retention horizon is one row for the whole database as well, and a test that left one set
+     * would make every later test's range illegal rather than merely different — including the ones in other
+     * classes, whose fixtures sit in 2026 and whose order is not fixed. Reset on both sides for that reason.
+     */
+    private void startWithNoRetentionHorizon() {
+        seed.sql("update analytics.raw_data_retention set retained_from = null, updated_at = now()").update();
     }
 
     /**
@@ -624,6 +635,26 @@ class StatsIntegrationTest {
         mvc.perform(stats(site, "summary", "2026-01-01", "2027-01-01", site.session()))
                 .andExpect(status().isOk());
         mvc.perform(stats(site, "summary", "2026-01-01", "2027-01-02", site.session()))
+                .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * The floor under how far back a range may reach, at the boundary rather than near it — and the boundary
+     * is an instant, not a date: the raw data begins at 2026-09-01T00:00Z, while the site's own 2026-09-01
+     * begins three hours earlier. Those three hours are the edge day a report counts live rather than from
+     * the rollup (D-160), so a range naming the horizon's own day is already asking for data that is gone.
+     */
+    @Test
+    void aRangeReachingBackPastTheRawDataIsRefused() throws Exception {
+        Site site = registerSite();
+        seed.sql("update analytics.raw_data_retention set retained_from = date '2026-09-01', updated_at = now()")
+                .update();
+
+        mvc.perform(stats(site, "summary", "2026-09-02", "2026-09-30", site.session()))
+                .andExpect(status().isOk());
+        mvc.perform(stats(site, "summary", "2026-09-01", "2026-09-30", site.session()))
+                .andExpect(status().isBadRequest());
+        mvc.perform(stats(site, "summary", "2026-08-25", "2026-09-30", site.session()))
                 .andExpect(status().isBadRequest());
     }
 

@@ -1,6 +1,7 @@
 package world.wholestory.api.analytics;
 
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +66,21 @@ class PublicStatsIntegrationTest {
                     + "for values from ('2026-10-01 00:00:00+00') to ('2026-11-01 00:00:00+00')")
                     .formatted(table, table)).update();
         }
+        publishNoRetentionHorizon();
+    }
+
+    @AfterEach
+    void leaveNoRetentionHorizon() {
+        publishNoRetentionHorizon();
+    }
+
+    /**
+     * One row for the whole database, so it is cleared on both sides. A horizon left behind would not make a
+     * later test wrong but illegal — every fixture here sits in 2026 — and these classes do not run in a
+     * fixed order.
+     */
+    private void publishNoRetentionHorizon() {
+        seed.sql("update analytics.raw_data_retention set retained_from = null, updated_at = now()").update();
     }
 
     @Test
@@ -181,6 +197,26 @@ class PublicStatsIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/public/sites/{domain}/stats/summary", site.domain())
                         .param("from", "2026-01-01").param("to", "2027-01-02"))
+                .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * And the same floor without a session. It lives in the class both surfaces share for the reason that
+     * matters here: a shared dashboard that still offered a range whose edges had been dropped would answer
+     * it short, to whoever holds the link, with nothing to compare it against.
+     */
+    @Test
+    void aRangeReachingBackPastTheRawDataIsRefusedWithoutASessionToo() throws Exception {
+        Site site = registerSite();
+        share(site, true);
+        seed.sql("update analytics.raw_data_retention set retained_from = date '2026-09-01', updated_at = now()")
+                .update();
+
+        mvc.perform(get("/api/public/sites/{domain}/stats/summary", site.domain())
+                        .param("from", "2026-09-02").param("to", "2026-09-30"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/public/sites/{domain}/stats/summary", site.domain())
+                        .param("from", "2026-08-01").param("to", "2026-09-30"))
                 .andExpect(status().isBadRequest());
     }
 

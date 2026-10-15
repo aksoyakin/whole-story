@@ -109,9 +109,12 @@ class PublicStatsController {
         return sites.publiclyReadable(domain).orElseThrow(SiteNotVisibleException::new);
     }
 
-    /** Days belong to the site here too: a shared dashboard shows the same boundaries as its owner's. */
-    private static DateRange rangeOf(ReadableSite site, LocalDate from, LocalDate to) {
-        return StatsRequests.dateRange(from, to, site.timezone());
+    /**
+     * Days belong to the site here too: a shared dashboard shows the same boundaries as its owner's — and the
+     * same floor under how far back it may ask, which is the point of the limits living in a shared class.
+     */
+    private DateRange rangeOf(ReadableSite site, LocalDate from, LocalDate to) {
+        return StatsRequests.dateRange(from, to, site.timezone(), stats.retainedFrom().orElse(null));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
