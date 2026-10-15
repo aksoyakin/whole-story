@@ -140,6 +140,18 @@ services:
 
   api:
     <<: *java-service
+    # A name of its own, because 'api' is not one on a host that runs more than one Compose project. The web
+    # container is attached to Traefik's shared network as well as this one, and Docker resolves a name across
+    # every network a container is on — so another project's service called 'api' can win the lookup, and
+    # nothing says it did. Measured: web resolved 'api' to 10.0.1.19 on the shared network while this
+    # container was 172.27.0.8, and every call to it came back 404 from a service that is not ours. Signing in,
+    # registering, resetting a password and the shared dashboard all failed with their ordinary error
+    # messages, api's log stayed completely silent, and the product looked like it was rejecting passwords.
+    #
+    # The service name 'api' still resolves here as well; this only adds a name no other project will claim.
+    networks:
+      internal:
+        aliases: [wholestory-api]
     image: ${IMAGE_PREFIX:?required}-api:${IMAGE_TAG:-latest}
     pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     environment:
@@ -177,7 +189,8 @@ services:
     pull_policy: always # a moving tag like 'latest' must be re-pulled on every deploy
     restart: unless-stopped
     environment:
-      API_URL: http://api:8080
+      # Not 'api': that name is ambiguous on the shared network this container is also on (see api's aliases).
+      API_URL: http://wholestory-api:8080
       # The snippet customers paste points at the public host, not the dashboard's.
       TRACKER_URL: https://wholestory.world/js/ws.js
       # Which host serves what (proxy.ts). Marketing and the shared dashboards on the apex, the account on
@@ -206,7 +219,14 @@ services:
       - ./prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     # Internal only, and deliberately not routed: Prometheus has no authentication whatsoever.
-    networks: [internal]
+    #
+    # The alias is the same defence api carries, for the same reason: Grafana is attached to the shared
+    # network as well as this one, and 'prometheus' is no more distinctive a name than 'api' was. The failure
+    # would be quieter here than it was there — a dashboard reading someone else's Prometheus draws numbers,
+    # just not ours.
+    networks:
+      internal:
+        aliases: [wholestory-prometheus]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
       interval: 10s

@@ -6,5 +6,8 @@ datasources:
     uid: prometheus
     type: prometheus
     access: proxy
-    url: http://prometheus:9090
+    # A name no other Compose project on this host can claim. Grafana sits on Traefik's shared network too,
+    # and Docker resolves a name across every network a container is on: plain 'prometheus' can land on
+    # somebody else's, which would draw real numbers from the wrong system rather than fail.
+    url: http://wholestory-prometheus:9090
     isDefault: true

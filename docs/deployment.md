@@ -134,6 +134,35 @@ psql -U postgres -d wholestory -c 'CREATE SCHEMA IF NOT EXISTS platform AUTHORIZ
 
 Without it `api` stops at startup with a Flyway error, which is the intended failure: loud rather than silent.
 
+## A service name is not unique on this host
+
+`web` and `grafana` are attached to Traefik's shared network as well as the stack's own, and Docker resolves a
+name against **every** network a container is on. A second Compose project on the same host with a service
+called `api` therefore competes for that name — and wins silently.
+
+That happened. Measured from inside the `web` container:
+
+```bash
+node -e "require('dns').lookup('api',{all:true},(e,a)=>console.log(e||a))"   # 10.0.1.19 — the shared network
+node -e "fetch('http://api:8080/api/auth/me').then(r=>console.log(r.status))" # 404; this api answers 401
+hostname -i                                                                   # 172.27.0.8, inside api
+```
+
+Every call `web` made went to another project's service, which answered `404` to all of them. Signing in said
+*"Wrong e-mail address or password."*, registering said *"Check the form and try again."*, the password reset
+said *"Could not send the link."* and the shared dashboard returned 404 — while `api`'s own log stayed
+completely silent, because nothing ever reached it. The product looked like it was rejecting correct
+passwords.
+
+The fix is a name no other project will claim: `api` is aliased `wholestory-api` and `prometheus` is aliased
+`wholestory-prometheus`, and the two containers that live on the shared network address them by those names.
+The plain service names still resolve inside the stack, so nothing internal changed.
+
+**The diagnostic worth keeping:** ask a service for something only *it* would answer in a particular way.
+`/api/auth/me` without a session must be `401`, because every unmatched request on that chain is
+authenticated; a `404` there means you are not talking to your own service. A status code that looks like an
+ordinary "not found" is how this hid for days.
+
 ## Old months are dropped, and it cannot be undone
 
 `processor` keeps monthly partitions of `analytics.events` and `analytics.sessions` in both directions: it
